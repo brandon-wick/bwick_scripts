@@ -1,31 +1,240 @@
 """
 Script designed to automate the process of download testing when
-given an installer type and release version. This script has the
+given a bundle type and release version. This script has the
 following requirements:
 
-1. Must run on linux and have /nfs/installers mounted
-2. Must have chrome browser and chromedriver somehwere in your $PATH
+1. Must have chrome browser installed and chromedriver somehwere in your $PATH
 (To install chromedriver, run script and see link in error message)
 
-Usage: python3 download_testing_v2.py academic 21-1
-"""
-from selenium import webdriver
-from selenium.webdriver.support.ui import Select
-from selenium.webdriver.common.keys import Keys
+2. Run on Linux or Mac
 
+note: if -OB is used, you must be connected to the PDX VPN
+
+example usages:
+    python3 download_testing_v2.py academic 21-1 -OB 161
+    python3 download_testing_v2.py academic 21-1 -manual
+"""
 import argparse
 import hashlib
 import os
+import re
+import requests
 import sys
 import time
+
+from argparse import RawDescriptionHelpFormatter
+from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.keys import Keys
+
+TIMEOUT = 6000
+URL = "https://schrodinger-staging.metaltoad-sites.com/downloads/releases"
+LOGIN_CREDENTIALS = {
+    "non-commercial": {
+        "user": "academic@schrodinger.com",
+        "pass": "password"
+    },
+    "commercial": {
+        "user": "commercial@schrodinger.com",
+        "pass": "password"
+    },
+    "advanced": {
+        "user": "advanced@sch-gsuite.services",
+        "pass": "Te5t1ng!"
+    },
+    "academic": {
+        "user": "academic@schrodinger.com",
+        "pass": "password"
+    }
+}
+
+
+def parse_args():
+    """
+    Parse the command line arguments.
+
+    :return args:  All script arguments
+    :rtype args:  class:`argparse.Namespace`
+    """
+
+    parser = argparse.ArgumentParser(
+        formatter_class=RawDescriptionHelpFormatter, description=__doc__)
+
+    parser.add_argument(
+        "bundle_type",
+        metavar="bundle_type",
+        help="Type of bundle",
+        choices=["academic", "advanced", "commercial", "non-commercial"])
+
+    parser.add_argument(
+        "release",
+        metavar="release",
+        help="Release version in YY-Q format (eg. 21-1)")
+
+    parser.add_argument(
+        "-OB",
+        metavar="###",
+        help="obtain ref checksums from given OB (eg. 054, 132)")
+
+    parser.add_argument(
+        "-manual",
+        help="manually input reference checksums",
+        action="store_true",
+        default=False)
+
+    args = parser.parse_args()
+
+    # Verify release argument is in correct format
+    if not re.search('^[2][0-9]-[1-4]$', args.release):
+        parser.error('Incorrect release given')
+
+    # require -OB or -manual to be passed
+    if not args.OB and not args.manual:
+        parser.error('Missing one of the following arguments: -OB, -manual')
+    elif args.OB and args.manual:
+        parser.error(
+            'You can only supply one of the following arguments: -OB, -manual')
+
+    # Verify -OB argument is in correct format
+    if args.OB and not re.search('^[0-9][0-9][0-9]$', args.OB):
+        parser.error('Improper build format given')
+
+    return args
+
+
+def download_all_bundles(driver, bundle_type, release):
+    for platform_id in ["edit-linux", "edit-windows-64-bit", "edit-mac"]:
+        download_bundle(driver, bundle_type, platform_id, "without KNIME")
+    if bundle_type != "academic":
+        download_bundle(driver, bundle_type, "edit-mac", "with KNIME")
+
+
+def download_bundle(driver, bundle_type, element_id, mac_version):
+    driver.refresh()
+    driver.find_element_by_id(element_id).click()
+
+    if bundle_type == "academic":
+        driver.find_element_by_id("edit-freemaestro-acknowledge").click()
+    else:
+        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
+        mac_dropdown.select_by_visible_text(mac_version)
+
+    driver.find_element_by_id("edit-eula").click()
+    driver.find_element_by_id("edit-submit").click()
+
+    #TODO: replace time.sleep() with a function that can verify
+    # the download has started through scraping chrome's download tab
+    time.sleep(10)
+    driver.execute_script("window.history.go(-1)")
+
+
+def download_files_builder(bundle_type, release):
+    """
+    Creates a list of all the bundles that need to be downloaded.
+
+    :param bundle_type: bundle type given by CLI arguments
+    :type bundle_type: str
+
+    :param release: release version
+    :type release: str
+
+    :return download_files: list of all bundles to download
+    :rtype download_files: list
+    """
+
+    download_files = []
+    for platform in ["Linux-x86_64", "Windows-x64", "MacOSX"]:
+        download_files.append(get_bundle_name(bundle_type, platform, release))
+    if bundle_type != "academic":
+        download_files.append(
+            get_bundle_name(bundle_type, "KNIME_MacOSX", release))
+
+    return download_files
+
+
+def get_bundle_name(bundle_type, platform, release):
+    """
+    Constructs the bundle name
+
+    :param platform: OS platform defined in download_files_builder()
+    :type platform: str
+
+    :return bundle_name: name of bundle
+    :rtype bundle_name: str
+    """
+    prefix = ""
+    midfix = ""
+    suffix = ""
+
+    if bundle_type == "academic":
+        prefix = "Maestro"
+        suffix = "_Academic"
+    else:
+        prefix = "Schrodinger_Suites"
+        if bundle_type == "advanced":
+            midfix = "_Advanced"
+
+    if platform == "Linux-x86_64":
+        ext = ".tar"
+    elif platform == "Windows-x64":
+        ext = ".zip"
+    else:
+        ext = ".dmg"
+
+    bundle_name = f"{prefix}_20{release}{midfix}_{platform}{suffix}{ext}"
+
+    return bundle_name
+
+
+def get_ref_checksum(release, OB, bundle):
+    """
+    Obtains the reference checksum of the given OB
+
+    :param OB: OB build id (eg 142)
+    :type OB: str
+
+    :return resp.text: the checksum and the path of the file it was derived from
+    :rtype resp.text: str
+    """
+    url = f"http://build-download.schrodinger.com/OB/20{release}/build-{OB}/{bundle}.md5"
+    resp = requests.get(url, stream=True)
+    resp.raise_for_status()
+    return resp.text
+
+
+def input_ref_checksum(prompt):
+    """
+    Custom input function for when -manual is selected
+    If the checksum given is not in proper format, the user
+    is asked to try again
+
+    :param prompt: prompt to display when asking for checksum
+    :type prompt: str
+
+    :return checksum: checksum given by user
+    :rtype checksum: str
+    """
+    while True:
+        checksum = input(prompt)
+        if len(checksum) != 32 or not checksum.isalnum():
+            print(f"Improper checksum format given\nPlease try again")
+            continue
+        else:
+            break
+
+    return checksum
 
 
 def md5(fname):
     """
-    Calculate the md5checksum of file given.
+    Calculate the md5checksum
 
-    :return: Md5checksum
-    :rtype: class`hashlib.md5`
+    :param fname: file name from which the checksum is calculated
+    :type fname: str
+
+    :return checksum: md5checksum calculated from bundles
+    :rtype checksum: class `hashlib.md5`
     """
     hash_md5 = hashlib.md5()
     with open(fname, "rb") as f:
@@ -33,333 +242,105 @@ def md5(fname):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
-def parse_args():
+
+def remove_installers(download_dir, files_to_remove):
     """
-    Parse the command line arguments.
+    remove all bundles in download directory
 
-    :return:  All script arguments
-    :rtype:  class:`argparse.Namespace`
+    :param download_dir: User's download directory
+    :type download_dir: str
+
+    :param list files_to_remove: name of bundles to remove
+    :type list files_to_remove: list
     """
+    for fname in files_to_remove:
+        file_to_delete = os.path.join(download_dir, fname)
+        if os.path.isfile(file_to_delete):
+            os.remove(file_to_delete)
 
-    parser = argparse.ArgumentParser(
-        description='perform download testing')
 
-    parser.add_argument(
-        "installer",
-        help="Type of installer (academic, commercial, non-commercial, or advanced)")
+def main(*, bundle_type, release, OB, manual):
+    download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+    download_files = download_files_builder(bundle_type, release)
 
-    parser.add_argument(
-        "release",
-        help="Release version (eg. 21-1)")
+    # Retrieve reference checksums depending on if -OB or -manual is enabled
+    if manual:
+        checksum_references = {
+            bundle: input_ref_checksum(
+                f"Please enter reference checksum for {bundle}\n")
+            for (bundle) in download_files
+        }
+    else:
+        checksum_references = {
+            bundle: get_ref_checksum(release, OB, bundle)
+            for (bundle) in download_files
+        }
 
-    args = parser.parse_args()
+    # Remove any previous installers (of the same release) in user's download folder
+    remove_installers(download_dir, download_files)
 
-    return args
-
-def main(installer, release):
-    URL = "https://www.schrodinger.com/downloads/releases"
-
-    accounts = {"Non-commercial":{"user":"academic@schrodinger.com", "pass":"password"},
-                "Commercial":{"user":"commercial@schrodinger.com", "pass":"password"},
-                "Restricted":{"user":"advanced@sch-gsuite.services", "pass":"Te5t1ng!"}}
-
+    # Start up chrome with safebrowsing disabled
     chromeOptions = webdriver.ChromeOptions()
     prefs = {'safebrowsing.enabled': 'false'}
     chromeOptions.add_experimental_option("prefs", prefs)
     driver = webdriver.Chrome(options=chromeOptions)
     driver.get(URL)
 
-    username = driver.find_element_by_id("edit-name")
-    password = driver.find_element_by_id("edit-pass")
+    # Login
+    user = LOGIN_CREDENTIALS[bundle_type]["user"]
+    passwd = LOGIN_CREDENTIALS[bundle_type]["pass"]
 
-    if installer == "academic":
+    username_field = driver.find_element_by_id("edit-name")
+    password_field = driver.find_element_by_id("edit-pass")
+    username_field.send_keys(user)
+    password_field.send_keys(passwd)
+    driver.find_element_by_id("edit-submit").click()
 
-        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-        download_files = [f"Maestro_20{release}_Linux-x86_64_Academic.tar",
-                          f"Maestro_20{release}_Windows-x64_Academic.zip",
-                          f"Maestro_20{release}_MacOSX_Academic.dmg"]
+    # Select release
+    release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
+    release_dropdown.select_by_visible_text(f"Release 20{release}")
 
-        # Remove any previous installers (of the same release) in user's download folder
-        for file_to_delete in download_files:
-            file_path = os.path.join(download_dir, file_to_delete)
-            if os.path.isfile(file_to_delete):
-                os.remove(file_to_delete)
-
-        # Login
-        username.send_keys(accounts["Non-commercial"]["user"])
-        password.send_keys(accounts["Non-commercial"]["pass"])
-        driver.find_element_by_id("edit-submit").click()
-
-        # Select release
-        release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
-        release_dropdown.select_by_visible_text(f"Release 20{release}")
-
-        # Go to free maestro tab
+    # Go to Free Maestro tab if using academic account
+    if bundle_type == "academic":
         driver.find_element_by_link_text('Free Maestro').click()
 
-        # Download Linux
-        driver.refresh()
-        driver.find_element_by_id("edit-linux").click()
-        driver.find_element_by_id("edit-freemaestro-acknowledge").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        time.sleep(3)
-        driver.back()
+    # Download all bundles
+    download_all_bundles(driver, bundle_type, release)
 
-        # Download Windows
-        driver.refresh()
-        driver.find_element_by_id("edit-windows-64-bit").click()
-        driver.find_element_by_id("edit-freemaestro-acknowledge").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        time.sleep(3)
-        driver.back()
+    # Wait for all downloads to complete with a timeout of 2 hours
+    timeout = time.time() + TIMEOUT
+    for fname in download_files:
+        while not os.path.exists(os.path.join(download_dir, fname)):
+            time.sleep(1)
+            if time.time() > timeout:
+                print(
+                    f"{fname} download unfinished due to the timeout being met (timeout = {timeout}s) "
+                )
+                break
 
-        # Download Mac
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        driver.find_element_by_id("edit-freemaestro-acknowledge").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        time.sleep(3)
-        driver.back()
+    driver.quit()
 
-        for fname in download_files:
-            while not os.path.exists(os.path.join(download_dir, fname)):
-                time.sleep(60)
+    # Calculate, compare, and report checksums
+    print(bundle_type.capitalize() + " md5checksums")
+    for bundle in download_files:
+        bundle_path = os.path.join(download_dir, bundle)
+        bundle_checksum = md5(bundle_path)
+        ref_checksum = checksum_references[bundle]
 
-        driver.quit()
+        if bundle_checksum == ref_checksum[:32]:
+            print("congrats, both checksums match!")
+        else:
+            print("checksums DO NOT match")
 
-        # Calculate and compare checksums
-        print(installer.capitalize() + " md5checksums")
-        for fname in download_files:
-            installer_path = os.path.join(download_dir, fname)
-            ref_path = ref_path = os.path.join("/nfs/installers/releases", f"suite20{release}", "bundles", fname)
-            installer_checksum = md5(installer_path)
-            ref_checksum = md5(ref_path)
-
-            if installer_checksum == ref_checksum:
-                print("congrats, both checksums match!")
-            else:
-                print("checksums DO NOT match")
-            print(f"REFERENCE {ref_checksum} {ref_path}\n{installer} {installer_checksum} {installer_path}")
-
-    elif installer == "non-commercial":
-
-        download_files = ["Schrodinger_Suites_2021-1_Linux-x86_64.tar",
-                          "Schrodinger_Suites_2021-1_Windows-x64.zip",
-                          "Schrodinger_Suites_2021-1_MacOSX.dmg",
-                          "Schrodinger_Suites_2021-1_KNIME_MacOSX.dmg"]
-
-        for file_to_delete in download_files:
-            if os.path.isfile(file_to_delete):
-                os.remove(file_to_delete)
-
-        # Login
-        username.send_keys(accounts["Non-commercial"]["user"])
-        password.send_keys(accounts["Non-commercial"]["pass"])
-        driver.find_element_by_id("edit-submit").click()
-
-        # Select release
-        release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
-        release_dropdown.select_by_visible_text(f"Release 20{release}")
-
-        # Download Linux
-        driver.refresh()
-        driver.find_element_by_id("edit-linux").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Windows
-        driver.refresh()
-        driver.find_element_by_id("edit-windows-64-bit").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/o KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("without KNIME")
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/ KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("with KNIME")
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-
-        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-
-        for fname in download_files:
-            while not os.path.exists(os.path.join(download_dir, fname)):
-                time.sleep(60)
-
-        driver.quit()
-
-        # Calculate and compare checksums
-        print(installer.capitalize() + " md5checksums")
-        for fname in download_files:
-            installer_path = os.path.join(download_dir, fname)
-            ref_path = ref_path = os.path.join("/nfs/installers/releases", f"suite20{release}", "bundles", fname)
-            installer_checksum = md5(installer_path)
-            ref_checksum = md5(ref_path)
-
-            if installer_checksum == ref_checksum:
-                print("Congrats, both checksums match!")
-            else:
-                print("checksums DO NOT match")
-            print(f"REFERENCE {ref_checksum} {ref_path}\n{installer} {installer_checksum} {installer_path}")
-
-    elif installer == "commercial":
-
-        download_files = ["Schrodinger_Suites_2021-1_Linux-x86_64.tar",
-                          "Schrodinger_Suites_2021-1_Windows-x64.zip",
-                          "Schrodinger_Suites_2021-1_MacOSX.dmg",
-                          "Schrodinger_Suites_2021-1_KNIME_MacOSX.dmg"]
-
-        for file_to_delete in download_files:
-            if os.path.isfile(file_to_delete):
-                os.remove(file_to_delete)
-
-        # Login
-        username.send_keys(accounts["Commercial"]["user"])
-        password.send_keys(accounts["Commercial"]["pass"])
-        driver.find_element_by_id("edit-submit").click()
-
-        # Select release
-        release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
-        release_dropdown.select_by_visible_text(f"Release 20{release}")
-
-        # Download Linux
-        driver.refresh()
-        driver.find_element_by_id("edit-linux").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Windows
-        driver.refresh()
-        driver.find_element_by_id("edit-windows-64-bit").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/o KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("without KNIME")
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/ KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("with KNIME")
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-
-        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-
-        for fname in download_files:
-            while not os.path.exists(os.path.join(download_dir, fname)):
-                time.sleep(60)
-
-        driver.quit()
-
-        # Calculate and compare checksums
-        print(installer.capitalize() + " md5checksums")
-        for fname in download_files:
-            installer_path = os.path.join(download_dir, fname)
-            ref_path = ref_path = os.path.join("/nfs/installers/releases", f"suite20{release}", "bundles", fname)
-            installer_checksum = md5(installer_path)
-            ref_checksum = md5(ref_path)
-
-            if installer_checksum == ref_checksum:
-                print("congrats, both checksums match!")
-            else:
-                print("checksums DO NOT match")
-            print(f"REFERENCE {ref_checksum} {ref_path}\n{installer} {installer_checksum} {installer_path}")
-
-    elif installer == "advanced":
-        download_files = ["Schrodinger_Suites_2021-1_Advanced_Linux-x86_64.tar",
-                          "Schrodinger_Suites_2021-1_Advanced_Windows-x64.zip",
-                          "Schrodinger_Suites_2021-1_Advanced_MacOSX.dmg",
-                          "Schrodinger_Suites_2021-1_Advanced_KNIME_MacOSX.dmg"]
-
-        for file_to_delete in download_files:
-            if os.path.isfile(file_to_delete):
-                os.remove(file_to_delete)
-
-        # Login
-        username.send_keys(accounts["Restricted"]["user"])
-        password.send_keys(accounts["Restricted"]["pass"])
-        driver.find_element_by_id("edit-submit").click()
-
-        # Select release
-        release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
-        release_dropdown.select_by_visible_text(f"Release 20{release}")
-
-        # Download Linux
-        driver.refresh()
-        driver.find_element_by_id("edit-linux").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Windows
-        driver.refresh()
-        driver.find_element_by_id("edit-windows-64-bit").click()
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/o KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("without KNIME")
-        driver.find_element_by_id("edit-submit").click()
-        driver.back()
-
-        # Download Mac w/ KNIME
-        driver.refresh()
-        driver.find_element_by_id("edit-mac").click()
-        mac_dropdown = Select(driver.find_element_by_id("edit-mac-downloads"))
-        mac_dropdown.select_by_visible_text("with KNIME")
-        driver.find_element_by_id("edit-eula").click()
-        driver.find_element_by_id("edit-submit").click()
-
-        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-
-        for fname in download_files:
-            while not os.path.exists(os.path.join(download_dir, fname)):
-                time.sleep(60)
-
-        driver.quit()
-
-        # Calculate and compare checksums
-        print(installer.capitalize() + " md5checksums")
-        for fname in download_files:
-            installer_path = os.path.join(download_dir, fname)
-            ref_path = ref_path = os.path.join("/nfs/installers/releases", f"suite20{release}", "bundles", fname)
-            installer_checksum = md5(installer_path)
-            ref_checksum = md5(ref_path)
-
-            if installer_checksum == ref_checksum:
-                print("congrats, both checksums match!")
-            else:
-                print("checksums DO NOT match")
-            print(f"REFERENCE {ref_checksum} {ref_path}\n{installer} {installer_checksum} {installer_path}")
+        print(
+            f"REFERENCE {ref_checksum}\n{bundle_type} {bundle_checksum} {bundle_path}"
+        )
 
 
 if __name__ == '__main__':
     cmd_args = parse_args()
-    main(cmd_args.installer, cmd_args.release)
+    main(
+        bundle_type=cmd_args.bundle_type,
+        release=cmd_args.release,
+        OB=cmd_args.OB,
+        manual=cmd_args.manual)
