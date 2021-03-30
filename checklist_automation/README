@@ -1,0 +1,13 @@
+The scripts located in automation_checklist are tools to help automate creating, updating, and marking the google sheets checklists that QA uses to track regression testing.
+
+To use the tools, copy this scripts over into your script editor.
+
+In an open google sheets:
+1. Go to Tools > Script Editor
+2. Click on the '+' next to 'Files'
+3. Click 'script'
+4. copy over script
+
+checklist_common.gs will need to be edited. Parts that need to be edited are marked with a #EDIT THIS above it
+
+The tools left as they are right now will generate the following checklist shown in checklist_example.png
