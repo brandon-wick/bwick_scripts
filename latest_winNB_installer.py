@@ -19,6 +19,7 @@ import subprocess
 
 from argparse import RawDescriptionHelpFormatter
 
+
 def parse_args():
     """
     Parse the command line arguments.
@@ -43,6 +44,7 @@ def parse_args():
             parser.error('Incorrect release given')
 
     return args
+
 
 def format_buildID(build_id):
     # modify latest_build so that "build-###" becomes "Build ###"
@@ -94,12 +96,17 @@ def get_current_release():
     service = build('calendar', 'v3', credentials=creds)
 
     # Times for events().list()
-    now = DT.datetime.now().isoformat() + 'Z' # 'Z' indicates UTC time
-    fifteen_weeks_ahead = (DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
+    now = DT.datetime.now().isoformat() + 'Z'  # 'Z' indicates UTC time
+    fifteen_weeks_ahead = (
+        DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
 
     # List of all events in the past week that have "Release Target" in its name
-    events_result = service.events().list(calendarId=QA_calendar_id, timeMin=now,
-                                         timeMax=fifteen_weeks_ahead, singleEvents=True, q="* Release Target").execute()
+    events_result = service.events().list(
+        calendarId=QA_calendar_id,
+        timeMin=now,
+        timeMax=fifteen_weeks_ahead,
+        singleEvents=True,
+        q="* Release Target").execute()
 
     current_release = events_result["items"][0]["summary"][:4]
 

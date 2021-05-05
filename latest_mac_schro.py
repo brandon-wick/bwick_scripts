@@ -19,6 +19,7 @@ TODO: automate adding license
 
 """
 
+import argparse
 import datetime as DT
 import os
 import pickle
@@ -28,12 +29,68 @@ import shutil
 import subprocess
 import sys
 
+from argparse import RawDescriptionHelpFormatter
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
+
+def parse_args():
+    """
+    Parse the command line arguments.
+
+    :return args:  All script arguments
+    :rtype args:  class:`argparse.Namespace`
+    """
+
+    parser = argparse.ArgumentParser(
+        formatter_class=RawDescriptionHelpFormatter, description=__doc__)
+
+
+    parser.add_argument(
+        "platform",
+        choices=["darwin", "linux", "windows"],
+        metavar="platform",
+        help="Release version in YY-Q format (eg. 21-1)")
+
+    parser.add_argument(
+        "bundle_type",
+        choices=["academic", "general", "advanced"],
+        metavar="bundle_type",
+        help="type of bundle")
+
+    parser.add_argument(
+        "build_type",
+        choices=["NB", "OB"],
+        metavar="build_type",
+        help="Type of build: Official build or Nightly Build")
+
+    parser.add_argument(
+        "-build",
+        dest="build_id",
+        metavar="build",
+        help="build id in ### format (eg. 012, 105)")
+
+    parser.add_argument(
+        "-release",
+        metavar="release",
+        help="Release version in YY-Q format (eg. 21-1)")
+
+    args = parser.parse_args()
+
+    # Verify release argument is in correct format
+    if args.release:
+        if not re.search('^[2][0-9]-[1-4]$', args.release):
+            parser.error('Incorrect release given')
+
+    # Verify build_id argument is in correct format
+    if args.build_id:
+        if not re.search('^[0-9][0-9][0-9]$', args.build_id):
+            parser.error('Incorrect build id given')
+
+    return args
 
 def create_clean_dirs(*directories):
     """
@@ -333,9 +390,9 @@ def uninstall(release):
     shutil.rmtree(apps_dir)
 
 
-def main():
+def main(*, platform, bundle_type, build_type, release, build_id):
     base_url = 'http://build-download.schrodinger.com'
-    build_type = "NB"
+    build_type = bundle_type
     current_release, latest_build, schro_dmg_file = get_build_info(
         base_url, build_type)
     local_install_dir = f'/opt/schrodinger/suites{current_release}/'
@@ -343,7 +400,7 @@ def main():
         [base_url, build_type, current_release, latest_build, schro_dmg_file])
     user_download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
 
-    # If running as root, set download location to /tmp, otherwise user's directory
+    # If running as root, set download location to /tmp, otherwise set to user's directory
     if os.geteuid == 0:
         target = os.path.join('/tmp', schro_dmg_file)
     target = os.path.join(user_download_dir, schro_dmg_file)
@@ -376,4 +433,16 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    cmd_args = parse_args()
+
+    build_type = cmd_args.build_type
+    bundle_type = cmd_args.bundle_type
+    build_id = cmd_args.build_id
+    release = cmd_args.release
+    platform = cmd_args.platform
+
+    main(platform = platform,
+        bundle_type = bundle_type,
+        build_type = build_type,
+        release = release,
+        build_id = build_id)
