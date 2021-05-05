@@ -36,6 +36,7 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
+BASE_URL = 'http://build-download.schrodinger.com'
 
 def parse_args():
     """
@@ -262,7 +263,7 @@ def get_build_info(base_url, build_type):
     current_release = get_current_release()
 
     # update URL and navigate to builds page
-    URL = '/'.join([base_url, build_type, current_release])
+    URL = '/'.join([BASE_URL, build_type, current_release])
     page = requests.get(URL)
     soup = BeautifulSoup(page.content, 'html.parser')
 
@@ -381,23 +382,24 @@ def mount_dmg(dmg_path):
         # Unmount the dmg when the context is exited.
         subprocess.check_call(['hdiutil', 'detach', '-force', mount_point])
 
-
 def uninstall(release):
     old_suite = f"/opt/schrodinger/suites{release}/"
     apps_dir = f"/Applications/SchrodingerSuites{release}"
-    print(f"Removing {old_suite}...\nRemoving{apps_dir}")
+    print(f"Removing {old_suite}...\nRemoving{apps_dir}")fd
     shutil.rmtree(old_suite)
     shutil.rmtree(apps_dir)
 
 
 def main(*, platform, bundle_type, build_type, release, build_id):
-    base_url = 'http://build-download.schrodinger.com'
     build_type = bundle_type
+
+    if not release:
+        release == get_current_release()
     current_release, latest_build, schro_dmg_file = get_build_info(
-        base_url, build_type)
+        BASE_URL, build_type)
     local_install_dir = f'/opt/schrodinger/suites{current_release}/'
     download_url = '/'.join(
-        [base_url, build_type, current_release, latest_build, schro_dmg_file])
+        [BASE_URL, build_type, current_release, latest_build, schro_dmg_file])
     user_download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
 
     # If running as root, set download location to /tmp, otherwise set to user's directory
