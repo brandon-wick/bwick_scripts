@@ -352,6 +352,21 @@ def get_local_build_version(local_suite_path):
     return build_version
 
 
+def setup_dirs(release):
+    download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    if sys.platform.startswith('win'):
+        download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
+        local_install_dir = f'C:\\Program Files\Schrodinger{release}'
+
+    if sys.platform.startswith('darwin'):
+        local_install_dir = f'/opt/schrodinger/suites{release}'
+    else:
+        local_install_dir = f'/scr/schrodinger{release}'
+
+
+    return download_dir, local_install_dir
+
+
 def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     """
     Download latest schrodinger.hosts file and move it into the local installation
@@ -415,15 +430,13 @@ def main(*, bundle_type, build_type, release, knime):
     download_url = '/'.join(
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
-    # set up necessary directories
-    # TODO have all directory setup processes be platform agnostic
-    local_install_dir = f'/opt/schrodinger/suites{release}/'
-    user_download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    # set up necessary directories. If running as root, set download
+    # location to /tmp, otherwise set to user's download directory
+    download_dir, local_install_dir = setup_dirs(release)
 
-    # If running as root, set download location to /tmp, otherwise set to user's directory
     if os.geteuid == 0:
         target = os.path.join('/tmp', bundle_name)
-    target = os.path.join(user_download_dir, bundle_name)
+    target = os.path.join(download_dir, bundle_name)
 
     print(
         f"The latest build for {release} is {latest_build}. \nChecking for a local {release} installation..."
@@ -433,9 +446,7 @@ def main(*, bundle_type, build_type, release, knime):
         local_version = get_local_build_version(local_install_dir)
         print(f"Local installation found, version.txt shows: {local_version}")
 
-        latest_build_final = format_buildID(latest_build)
-
-        if current_release and latest_build_final in local_version:
+        if current_release and format_buildID(latest_build) in local_version:
             print(
                 "You currently have the latest build available for the current release, no update necessary"
             )
