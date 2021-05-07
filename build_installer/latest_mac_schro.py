@@ -49,16 +49,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         formatter_class=RawDescriptionHelpFormatter, description=__doc__)
 
-
-    parser.add_argument(
-        "platform",
-        choices=["darwin", "linux", "windows"],
-        metavar="platform",
-        help="Release version in YY-Q format (eg. 21-1)")
-
     parser.add_argument(
         "bundle_type",
-        choices=["academic", "general", "advanced"],
+        choices=["academic", "general", "advanced", "desres"],
         metavar="bundle_type",
         help="type of bundle")
 
@@ -71,13 +64,18 @@ def parse_args():
     parser.add_argument(
         "-build",
         dest="build_id",
-        metavar="build",
+        metavar="###",
         help="build id in ### format (eg. 012, 105)")
 
     parser.add_argument(
         "-release",
         metavar="release",
-        help="Release version in YY-Q format (eg. 21-1)")
+        help="Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar")
+
+    parser.add_argument(
+        "-knime",
+        action="store_true",
+        help="include KNIME in schrodinger installation")
 
     args = parser.parse_args()
 
@@ -85,6 +83,7 @@ def parse_args():
     if args.release:
         if not re.search('^[2][0-9]-[1-4]$', args.release):
             parser.error('Incorrect release given')
+        args.release = "20" + args.release
 
     # Verify build_id argument is in correct format
     if args.build_id:
@@ -179,8 +178,11 @@ def download_file(url, target):
 
 def get_current_release():
     """
-    Gets the current release version by looking 15 weeks ahead into the build and release calendar
+    Gets the current release version by looking 15 weeks ahead into the build&release calendar
     and examining the next release target.
+
+    :return dmg_file: current release in XX-X format
+    :return type: str
     """
     SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
     QA_calendar_id = "schrodinger.com_cl2hf12t7dim7s894gda2l9pa0@group.calendar.google.com"
@@ -248,9 +250,9 @@ def format_buildID(build_id):
 
 
 
-def get_build_info(base_url, build_type):
+def get_build_info(release, build_type, bundle_type, knime):
     """
-    Retrieves the current release and the latest build-id that contains
+    Retrieves the latest build-id that contains
     a Schrodinger w/KNIME installation.
 
     :param str base_url: base url of schrodinger build site
@@ -260,10 +262,17 @@ def get_build_info(base_url, build_type):
     :return str dmg_file: dmg file extension
     :return str latest_build: The latest build ID
     """
-    current_release = get_current_release()
+
+    # Get platform
+    if sys.platform.startswith("linux"):
+        platform = "Linux"
+    elif sys.platform.startswith("darwin"):
+        platform = "MacOSX"
+    else:
+        platform = "Windows"
 
     # update URL and navigate to builds page
-    URL = '/'.join([BASE_URL, build_type, current_release])
+    URL = '/'.join([BASE_URL, build_type, release])
     page = requests.get(URL)
     soup = BeautifulSoup(page.content, 'html.parser')
 
@@ -276,17 +285,17 @@ def get_build_info(base_url, build_type):
         builds_list = builds_list[::-1]
 
     # go through each build-id page (starting with the latest) and find the latest build id
-    # with a schrodinger w/KNIME installation. Stop once one is found
-    for page in builds_list:
-        dmg_file = get_dmg_file(URL, page)
-        latest_build = page
-        if dmg_file:
+    # Stop once and available bundle is found
+    for build_page in builds_list:
+        bundle_name = get_bundle_name(URL, build_page, bundle_type, platform, knime)
+        latest_build = build_page
+        if bundle_name:
             break
 
-    return current_release, latest_build, dmg_file
+    return latest_build, bundle_name
 
 
-def get_dmg_file(*url_bits):
+def get_bundle_name(URL, build, bundle_type, platform, knime):
     """
     Fetches the dmg file name by scraping for the
     advanced installers header and specifically filtering
@@ -297,31 +306,42 @@ def get_dmg_file(*url_bits):
         for the installers page
     :return str dmg_file: dmg file name
     """
-    URL = '/'.join(list(url_bits))
+    URL = '/'.join([URL, build])
     page = requests.get(URL)
     page.raise_for_status()
     soup = BeautifulSoup(page.content, 'html.parser')
 
-    # find the 'Advanced Installers' header and go to the ul under it.
+    # find the appropriate bundle type header and go to the ul under it.
+
+    header = bundle_type.capitalize()
+    if bundle_type.lower() == "desres":
+        header = "Academic"
     try:
-        advanced_installer_header = soup.find('h3', text='Advanced Installers')
-        advanced_installers = advanced_installer_header.find_next_sibling()
+        bundle_type_header = soup.find('h3', text=f'{header} Installers')
+        installers = bundle_type_header.find_next_sibling()
     except:
-        print(f"No advanced installer found for {URL}, moving to next build")
+        print(f"No {bundle_type} installer found for {URL}, moving to next build")
         return None
 
-    # search for mac w/KNIME installer and get the href
-    Knime_installer = advanced_installers.find_all(
-        lambda tag: (tag.name == 'a' and ("Mac" and "with" in tag.text)))
+    # filter out other platform installers
+    filter_ = platform
+    if bundle_type.lower() == "desres":
+        filter_ = "DESRES"
+    installers = installers.find_all(
+        lambda tag: (tag.name == 'a' and filter_ in tag.text))
 
-    dmg_file = ""
+    installer = installers[0]
+    # Select KNIME installation if -knime was passed
+    if platform == "MacOSX" and not knime:
+        installer = installers[1]
 
-    if Knime_installer:
-        dmg_file = Knime_installer[0]['href']
-        dmg_file = dmg_file.split('/')[-1]
+    installer_file = ""
 
-    return dmg_file
+    if installer:
+        installer_file = installer['href']
+        installer_file = installer_file.split('/')[-1]
 
+    return installer_file
 
 def get_local_build_version(local_suite_path):
     """
@@ -385,27 +405,30 @@ def mount_dmg(dmg_path):
 def uninstall(release):
     old_suite = f"/opt/schrodinger/suites{release}/"
     apps_dir = f"/Applications/SchrodingerSuites{release}"
-    print(f"Removing {old_suite}...\nRemoving{apps_dir}")fd
+    print(f"Removing {old_suite}...\nRemoving{apps_dir}")
     shutil.rmtree(old_suite)
     shutil.rmtree(apps_dir)
 
 
-def main(*, platform, bundle_type, build_type, release, build_id):
-    build_type = bundle_type
+def main(*, bundle_type, build_type, release, build_id, knime):
 
+    # obtain all relevant build info for constructing the download url
     if not release:
-        release == get_current_release()
-    current_release, latest_build, schro_dmg_file = get_build_info(
-        BASE_URL, build_type)
-    local_install_dir = f'/opt/schrodinger/suites{current_release}/'
+        release = get_current_release()
+
+    latest_build, bundle_name = get_build_info(release, build_type, bundle_type, knime)
     download_url = '/'.join(
-        [BASE_URL, build_type, current_release, latest_build, schro_dmg_file])
+        [BASE_URL, build_type, release, latest_build, bundle_name])
+
+    # set up necessary directories
+    # TODO have all directory setup processes be platform agnostic
+    local_install_dir = f'/opt/schrodinger/suites{release}/'
     user_download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
 
     # If running as root, set download location to /tmp, otherwise set to user's directory
     if os.geteuid == 0:
-        target = os.path.join('/tmp', schro_dmg_file)
-    target = os.path.join(user_download_dir, schro_dmg_file)
+        target = os.path.join('/tmp', bundle_name)
+    target = os.path.join(user_download_dir, bundle_name)
 
     print(
         f"The current release is {current_release} and the latest build is {latest_build}. \nChecking for a local {current_release} installation..."
@@ -440,11 +463,11 @@ if __name__ == "__main__":
     build_type = cmd_args.build_type
     bundle_type = cmd_args.bundle_type
     build_id = cmd_args.build_id
+    knime = cmd_args.knime
     release = cmd_args.release
-    platform = cmd_args.platform
 
-    main(platform = platform,
-        bundle_type = bundle_type,
+    main(bundle_type = bundle_type,
         build_type = build_type,
         release = release,
-        build_id = build_id)
+        build_id = build_id,
+        knime = knime)
