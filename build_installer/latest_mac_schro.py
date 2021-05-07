@@ -90,6 +90,12 @@ def parse_args():
         if not re.search('^[0-9][0-9][0-9]$', args.build_id):
             parser.error('Incorrect build id given')
 
+    # Verify -knime is only given under appropriate conditions
+    if args.knime and args.bundle_type in ["desres", "academic"]:
+        parser.error('-knime can only be passed when bundle type is general or advanced')
+    if args.knime and not sys.platform.startswith("darwin"):
+        parser.error('Incompatible platform, please remove the -knime option')
+
     return args
 
 def create_clean_dirs(*directories):
@@ -181,7 +187,7 @@ def get_current_release():
     Gets the current release version by looking 15 weeks ahead into the build&release calendar
     and examining the next release target.
 
-    :return dmg_file: current release in XX-X format
+    :return dmg_file: current release in XXXX-X format
     :return type: str
     """
     SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
