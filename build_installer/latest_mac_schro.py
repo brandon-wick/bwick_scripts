@@ -62,12 +62,6 @@ def parse_args():
         help="Type of build: Official build or Nightly Build")
 
     parser.add_argument(
-        "-build",
-        dest="build_id",
-        metavar="###",
-        help="build id in ### format (eg. 012, 105)")
-
-    parser.add_argument(
         "-release",
         metavar="release",
         help="Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar")
@@ -85,14 +79,9 @@ def parse_args():
             parser.error('Incorrect release given')
         args.release = "20" + args.release
 
-    # Verify build_id argument is in correct format
-    if args.build_id:
-        if not re.search('^[0-9][0-9][0-9]$', args.build_id):
-            parser.error('Incorrect build id given')
-
     # Verify -knime is only given under appropriate conditions
     if args.knime and args.bundle_type in ["desres", "academic"]:
-        parser.error('-knime can only be passed when bundle type is general or advanced')
+        parser.error('-knime can only be passed when bundle_type is general or advanced')
     if args.knime and not sys.platform.startswith("darwin"):
         parser.error('Incompatible platform, please remove the -knime option')
 
@@ -416,7 +405,7 @@ def uninstall(release):
     shutil.rmtree(apps_dir)
 
 
-def main(*, bundle_type, build_type, release, build_id, knime):
+def main(*, bundle_type, build_type, release, knime):
 
     # obtain all relevant build info for constructing the download url
     if not release:
@@ -437,7 +426,7 @@ def main(*, bundle_type, build_type, release, build_id, knime):
     target = os.path.join(user_download_dir, bundle_name)
 
     print(
-        f"The current release is {current_release} and the latest build is {latest_build}. \nChecking for a local {current_release} installation..."
+        f"The latest build for {release} is {latest_build}. \nChecking for a local {release} installation..."
     )
 
     if os.path.isdir(local_install_dir):
@@ -468,12 +457,10 @@ if __name__ == "__main__":
 
     build_type = cmd_args.build_type
     bundle_type = cmd_args.bundle_type
-    build_id = cmd_args.build_id
     knime = cmd_args.knime
     release = cmd_args.release
 
     main(bundle_type = bundle_type,
         build_type = build_type,
         release = release,
-        build_id = build_id,
         knime = knime)
