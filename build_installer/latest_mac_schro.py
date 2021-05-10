@@ -28,15 +28,15 @@ import requests
 import shutil
 import subprocess
 import sys
+import tarfile
+import zipfile
 
 from argparse import RawDescriptionHelpFormatter
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 
 BASE_URL = 'http://build-download.schrodinger.com'
+
 
 def parse_args():
     """
@@ -87,6 +87,7 @@ def parse_args():
 
     return args
 
+
 def create_clean_dirs(*directories):
     """
     Creates new directories. Also removes any pre-existing
@@ -101,48 +102,6 @@ def create_clean_dirs(*directories):
         os.makedirs(dir)
 
 
-def darwin_install(release, dmg_file_path, target_dir):
-    """
-    Sets up the directories needed and runs Darwin installer in the given
-    target directory.
-
-    Extracts "Payload" from each pkg file in installer_tmpdir and pipes it to
-    cpio.
-
-    :param str release: Latest release.
-    :param str dmg_location: Path to schrodinger dmg file.
-    :param str target_dir: Path to installation target directory.
-    """
-    installer_tmpdir = os.path.expanduser("~") + "/installer_tmpdir"
-    app_dir = f"/Applications/SchrodingerSuites{release}"
-    create_clean_dirs(installer_tmpdir, target_dir, app_dir)
-    extract_bundle(dmg_file_path, installer_tmpdir)
-
-    for file_path in os.listdir(installer_tmpdir):
-        if os.path.splitext(file_path)[1] != '.pkg':
-            continue
-        payload = os.path.join(file_path, 'Payload')
-
-        # Equivalent of "gunzip -c $payload | cpio -i"
-        gunzip_cmd = ['gunzip', '-c', payload]
-        gunzip = subprocess.Popen(
-            gunzip_cmd, cwd=installer_tmpdir, stdout=subprocess.PIPE)
-        subprocess.check_call(
-            ['cpio', '-i'], cwd=target_dir, stdin=gunzip.stdout)
-        gunzip.wait()
-        if gunzip.returncode != 0:
-            raise subprocess.CalledProcessError(
-                gunzip.returncode, gunzip_cmd, output=gunzip.stdout)
-
-    # move .app files to /Applications/
-    for file in os.listdir(target_dir):
-        if os.path.splitext(file)[1] != ".app":
-            continue
-        shutil.move((target_dir + file), app_dir)
-
-    shutil.rmtree(installer_tmpdir)
-
-
 def download_file(url, target):
     """
     Use the stream interface of requests to download a file in chunks (without
@@ -151,9 +110,9 @@ def download_file(url, target):
     :param str url: URL to download file from
     :param str target: Path to the target file being downloaded.
     """
-    #remove previous .dmg file if one already exists
+    # remove previous schrodinger installer if one already exists
     if os.path.exists(target):
-        print("Previous .dmg found, removing...")
+        print("Previous installer found, removing...")
         os.remove(target)
 
     # Download file using the stream interface from requests
@@ -179,6 +138,10 @@ def get_current_release():
     :return dmg_file: current release in XXXX-X format
     :return type: str
     """
+    from googleapiclient.discovery import build
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+
     SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
     QA_calendar_id = "schrodinger.com_cl2hf12t7dim7s894gda2l9pa0@group.calendar.google.com"
     creds = None
@@ -220,11 +183,49 @@ def get_current_release():
 
 
 def extract_bundle(bundle_path, destination):
-    with mount_dmg(bundle_path) as mount_point:
-        bundle_name = os.path.basename(bundle_path)
-        pkg_path = os.path.join(mount_point,
-                                os.path.splitext(bundle_name)[0] + '.pkg')
-        subprocess.check_call(['xar', '-C', destination, '-xvf', pkg_path])
+    """
+    Extract bundle from tar or zip or dmg into the specified directory.
+
+    :param str platform: Platform name, must be in buildinfo.Platforms
+    :param str bundle_path: Path to bundle being extracted.
+    :param str destination: Target directory for extracting files.
+    """
+    #logger.info("Extracting {} to {}".format(bundle_path, destination))
+
+    if sys.platform.startswith('win'):
+        with zipfile.ZipFile(bundle_path, 'r') as zip_archive:
+            zip_archive.extractall(path=destination)
+    elif sys.platform.startswith('linux'):
+        with tarfile.open(name=bundle_path, mode='r') as tar:
+            tar.extractall(path=destination)
+    elif sys.platform.startswith('darwin'):
+        with mount_dmg(bundle_path) as mount_point:
+            bundle_name = os.path.basename(bundle_path)
+            pkg_path = os.path.join(mount_point,
+                                    os.path.splitext(bundle_name)[0] + '.pkg')
+            subprocess.check_call(['xar', '-C', destination, '-xvf', pkg_path])
+        return
+    else:
+        raise RuntimeError(f'Unsupported platform: {sys.platform}')
+
+    # For tar and zip, extracted files go in a subdir and need to be moved to
+    # the destination directory
+    dirname = os.path.join(destination,
+                           os.path.splitext(os.path.basename(bundle_path))[0])
+    try:
+        for name in os.listdir(dirname):
+            dest = os.path.join(destination, name)
+            if os.path.exists(dest):
+                if os.path.isdir(dest):
+                    shutil.rmtree(dest)
+                else:
+                    os.remove(dest)
+            src = os.path.join(dirname, name)
+            #logger.info("Moving {} to {}".format(
+                #os.path.abspath(src), os.path.abspath(dest)))
+            os.rename(src, dest)
+    finally:
+        shutil.rmtree(dirname)
 
 
 def format_buildID(build_id):
@@ -242,7 +243,6 @@ def format_buildID(build_id):
         latest_build_final = format1
 
     return latest_build_final
-
 
 
 def get_build_info(release, build_type, bundle_type, knime):
@@ -338,6 +338,7 @@ def get_bundle_name(URL, build, bundle_type, platform, knime):
 
     return installer_file
 
+
 def get_local_build_version(local_suite_path):
     """
     Gets the content from version.txt found in the local suite directory
@@ -345,23 +346,113 @@ def get_local_build_version(local_suite_path):
     :param str local_install_path: Path to local installation
     :return str build_version: contents of version.txt
     """
-    version_file = local_suite_path + "version.txt"
+    version_file = local_suite_path + "/version.txt"
     with open(version_file, 'r') as fh:
         build_version = fh.read()
 
     return build_version
 
 
+def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
+    install_tempdir = local_install_dir + "/installer_tmpdir"
+    create_clean_dirs(install_tempdir)
+    extract_bundle(bundle_installer, install_tempdir)
+
+    if sys.platform.startswith('win'):
+        cmd = _get_windows_install_cmd(install_tempdir, install_tempdir)
+        _run_install_cmd(cmd, install_tempdir)
+    elif sys.platform.startswith('linux'):
+        cmd = _get_linux_install_cmd(install_tempdir, install_tempdir)
+        _run_install_cmd(cmd, install_tempdir)
+    elif sys.platform.startswith('darwin'):
+        _darwin_install(release, install_tempdir, local_install_dir)
+    else:
+        raise RuntimeError('unsupported platform: {}'.format(sys.platform()))
+
+
+def _run_install_cmd(cmd, cwd):
+    """
+    Runs the specified command in the given working directory with the env
+    variable SCHRODINGER_INSTALL_UNSUPPORTED_PLATFORMS set to "1".
+
+    :param list cmd: Command to execute.
+    :param str cwd: Working directory for the command.
+    """
+    #logger.info('Running {}'.format(subprocess.list2cmdline(cmd)))
+    env = os.environ.copy()
+    env['SCHRODINGER_INSTALL_UNSUPPORTED_PLATFORMS'] = '1'
+    subprocess.check_call(cmd, cwd=cwd, stderr=subprocess.STDOUT, env=env)
+
+
+def _get_windows_install_cmd(installer_dir, target_dir):
+    setup_silent = os.path.join(installer_dir, 'setup-silent.exe')
+    cmd = [
+        setup_silent, '/interactive_mode:off', '/install',
+        "/installdir:'{}'".format(target_dir), '/force'
+    ]
+    return cmd
+
+
+def _get_linux_install_cmd(installer_dir, target_dir):
+    cmd = [
+        "./INSTALL", "-b", "-d", installer_dir, "-t",
+        os.path.join(target_dir, "thirdparty"), "-s", target_dir, "-k", "/scr",
+        "--allow_deprecated"
+    ]
+    cmd.extend([d for d in os.listdir(installer_dir) if d.endswith(".tar.gz")])
+    return cmd
+
+
+def _darwin_install(release, installer_dir, target_dir):
+    """
+    Runs Darwin installer in the given target directory.
+
+    Extracts "Payload" from each pkg file in installer_dir and pipes it to
+    cpio.
+
+    :param str installer_dir: Path to directory containing pkg files.
+    :param str target_dir: Path to installation target directory.
+    """
+
+    app_dir = f"/Applications/SchrodingerSuites{release}"
+    create_clean_dirs(app_dir)
+    target_dir = target_dir + "/"
+
+    for file_path in os.listdir(installer_dir):
+        if os.path.splitext(file_path)[1] != '.pkg':
+            continue
+        payload = os.path.join(file_path, 'Payload')
+        #logger.info('Extracting payload from {}'.format(payload))
+        # Equivalent of "gunzip -c $payload | cpio -i"
+        gunzip_cmd = ['gunzip', '-c', payload]
+        gunzip = subprocess.Popen(
+            gunzip_cmd, cwd=installer_dir, stdout=subprocess.PIPE)
+        subprocess.check_call(
+            ['cpio', '-i'], cwd=target_dir, stdin=gunzip.stdout)
+        gunzip.wait()
+        if gunzip.returncode != 0:
+            raise subprocess.CalledProcessError(
+                gunzip.returncode, gunzip_cmd, output=gunzip.stdout)
+
+    # TODO figure out why only maestro.app turns into "contents" directory when moved over
+    # move .app files to /Applications/
+
+    for file_ in os.listdir(target_dir):
+        if os.path.splitext(file_)[1] != ".app":
+            continue
+        shutil.move((target_dir + file_), app_dir)
+
+
 def setup_dirs(release):
     download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
     if sys.platform.startswith('win'):
         download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
-        local_install_dir = f'C:\\Program Files\Schrodinger{release}'
+        local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
 
     if sys.platform.startswith('darwin'):
-        local_install_dir = f'/opt/schrodinger/suites{release}'
+        local_install_dir = f"/opt/schrodinger/suites{release}"
     else:
-        local_install_dir = f'/scr/schrodinger{release}'
+        local_install_dir = f"/scr/schrodinger{release}"
 
 
     return download_dir, local_install_dir
@@ -412,12 +503,19 @@ def mount_dmg(dmg_path):
         # Unmount the dmg when the context is exited.
         subprocess.check_call(['hdiutil', 'detach', '-force', mount_point])
 
-def uninstall(release):
-    old_suite = f"/opt/schrodinger/suites{release}/"
-    apps_dir = f"/Applications/SchrodingerSuites{release}"
-    print(f"Removing {old_suite}...\nRemoving{apps_dir}")
-    shutil.rmtree(old_suite)
-    shutil.rmtree(apps_dir)
+
+def uninstall(release, installation_dir):
+
+    if sys.platform.startswith('win'):
+        uninstaller = f"{installation_dir}\\installer\\uninstall-silent.exe"
+        subprocess.run([uninstaller, "/interactive_mode:off"])
+    else:
+        print(f"Removing {installation_dir}...")
+        shutil.rmtree(installation_dir)
+        if sys.platform.startswith('darwin'):
+            apps_dir = f"/Applications/SchrodingerSuites{release}"
+            print(f"Removing {apps_dir}")
+            shutil.rmtree(apps_dir)
 
 
 def main(*, bundle_type, build_type, release, knime):
@@ -434,6 +532,7 @@ def main(*, bundle_type, build_type, release, knime):
     # location to /tmp, otherwise set to user's download directory
     download_dir, local_install_dir = setup_dirs(release)
 
+    # TODO see how this interacts w/ windows platform
     if os.geteuid == 0:
         target = os.path.join('/tmp', bundle_name)
     target = os.path.join(download_dir, bundle_name)
@@ -441,26 +540,25 @@ def main(*, bundle_type, build_type, release, knime):
     print(
         f"The latest build for {release} is {latest_build}. \nChecking for a local {release} installation..."
     )
-
+    '''
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
         print(f"Local installation found, version.txt shows: {local_version}")
 
-        if current_release and format_buildID(latest_build) in local_version:
+        if release and format_buildID(latest_build) in local_version:
             print(
-                "You currently have the latest build available for the current release, no update necessary"
+                "You currently have the latest build available for the given release, no update necessary"
             )
             return
         else:
-            print(
-                "Local installation is out of date. Downloading latest NB...")
+            print("Local installation is out of date")
+            uninstall(release, local_install_dir)
     else:
         print("No local installation found, downloading latest NB...")
-
-    download_file(download_url, target)
-    darwin_install(current_release, target, local_install_dir)
-    install_schrodinger_hosts(build_type, current_release, latest_build,
-                                local_install_dir)
+    '''
+    #download_file(download_url, target)
+    install_schrodinger_bundle(release, target, local_install_dir)
+    install_schrodinger_hosts(build_type, release, latest_build, local_install_dir)
 
 
 if __name__ == "__main__":
@@ -471,7 +569,4 @@ if __name__ == "__main__":
     knime = cmd_args.knime
     release = cmd_args.release
 
-    main(bundle_type = bundle_type,
-        build_type = build_type,
-        release = release,
-        knime = knime)
+    main(bundle_type=bundle_type, build_type=build_type, release=release, knime=knime)
