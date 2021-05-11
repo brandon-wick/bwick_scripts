@@ -62,6 +62,18 @@ def parse_args():
         help="Type of build: Official build or Nightly Build")
 
     parser.add_argument(
+        "-c",
+        dest="download_destination",
+        metavar="dest",
+        help="Download bundle to the specified directory. If not given the bundle is downloaded to the user's download")
+
+    parser.add_argument(
+        "-d, --download",
+        dest="download_only",
+        action="store_true",
+        help="Download bundle only, no installation of bundle or schrodinger.hosts is performed.")
+
+    parser.add_argument(
         "-release",
         metavar="release",
         help="Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar")
@@ -72,6 +84,10 @@ def parse_args():
         help="include KNIME in schrodinger installation")
 
     args = parser.parse_args()
+
+    # Verify path download destination exists if given
+    if not os.path.exists(args.download_destination):
+        parser.error("The download destination given doesn't seem to exist. Please give a pre-existing path")
 
     # Verify release argument is in correct format
     if args.release:
@@ -132,7 +148,7 @@ def download_file(url, target):
 
 def get_current_release():
     """
-    Gets the current release version by looking 15 weeks ahead into the build&release calendar
+    Gets the current release version by looking 15 weeks ahead into the build & release calendar
     and examining the next release target.
 
     :return dmg_file: current release in XXXX-X format
@@ -221,7 +237,7 @@ def extract_bundle(bundle_path, destination):
                 else:
                     os.remove(dest)
             src = os.path.join(dirname, name)
-            print(f"Moving {os.path.abspath(src)} to {os.path.abspath(dest)}".format(
+            print(f"Moving {os.path.abspath(src)} to {os.path.abspath(dest)}")
             os.rename(src, dest)
     finally:
         shutil.rmtree(dirname)
@@ -355,7 +371,6 @@ def get_local_build_version(local_suite_path):
 def move_to_final(source, dest):
     for file_ in os.listdir(source):
         shutil.move(os.path.join(source, file_), dest)
-
 
 
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
@@ -530,7 +545,7 @@ def uninstall(release, installation_dir):
         shutil.rmtree(apps_dir)
 
 
-def main(*, bundle_type, build_type, release, knime):
+def main(*, bundle_type, build_type, release, knime, download_only=False, download_dest=None):
 
     # obtain all relevant build info for constructing the download url
     if not release:
@@ -540,14 +555,11 @@ def main(*, bundle_type, build_type, release, knime):
     download_url = '/'.join(
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
-    # set up necessary directories. If running as root, set download
-    # location to /tmp, otherwise set to user's download directory
+    # get path for download and local installation directory
     download_dir, local_install_dir = setup_dirs(release)
-
-    # TODO these don't work with windows, see if
-    #if os.geteuid == 0:
-     #   target = os.path.join('/tmp', bundle_name)
-    target = os.path.join(download_dir, bundle_name)
+    bundle_path = os.path.join(download_dir, bundle_name)
+    if download_dest:
+        bundle_path = os.path.join(download_dest, bundle_name)
 
     print(
         f"The latest build for {release} is {latest_build}. \nChecking for a local {release} installation..."
@@ -568,17 +580,21 @@ def main(*, bundle_type, build_type, release, knime):
     else:
         print("No local installation found, downloading latest NB...")
 
-    download_file(download_url, target)
-    install_schrodinger_bundle(release, target, local_install_dir)
+    download_file(download_url, bundle_path)
+    if download_only:
+        return
+
+    install_schrodinger_bundle(release, bundle_path, local_install_dir)
     install_schrodinger_hosts(build_type, release, latest_build, local_install_dir)
 
 
 if __name__ == "__main__":
     cmd_args = parse_args()
-
+    download_dest = cmd_args.download_destination
     build_type = cmd_args.build_type
     bundle_type = cmd_args.bundle_type
     knime = cmd_args.knime
     release = cmd_args.release
+    download_only= cmd_args.download_only
 
-    main(bundle_type=bundle_type, build_type=build_type, release=release, knime=knime)
+    main(bundle_type=bundle_type, build_type=build_type, download_dest=download_dest, release=release, knime=knime, download_only=download_only)
