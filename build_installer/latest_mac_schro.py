@@ -66,18 +66,24 @@ def parse_args():
         dest="download_destination",
         metavar="dest",
         default=None,
-        help="Download bundle to the specified directory. If not given the bundle is downloaded to the user's download")
+        help=
+        "Download bundle to the specified directory. If not given the bundle is downloaded to the user's download"
+    )
 
     parser.add_argument(
         "-d, --download",
         dest="download_only",
         action="store_true",
-        help="Download bundle only, no installation of bundle or schrodinger.hosts is performed.")
+        help=
+        "Download bundle only, no installation of bundle or schrodinger.hosts is performed."
+    )
 
     parser.add_argument(
         "-release",
         metavar="release",
-        help="Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar")
+        help=
+        "Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar"
+    )
 
     parser.add_argument(
         "-knime",
@@ -89,7 +95,9 @@ def parse_args():
     # Verify path download destination exists if given
     if args.download_destination:
         if not os.path.exists(args.download_destination):
-            parser.error("The download destination given doesn't seem to exist. Please give a pre-existing path")
+            parser.error(
+                "The download destination given doesn't seem to exist. Please give a pre-existing path"
+            )
 
     # Verify release argument is in correct format
     if args.release:
@@ -99,7 +107,9 @@ def parse_args():
 
     # Verify -knime is only given under appropriate conditions
     if args.knime and args.bundle_type in ["desres", "academic"]:
-        parser.error('-knime can only be passed when bundle_type is general or advanced')
+        parser.error(
+            '-knime can only be passed when bundle_type is general or advanced'
+        )
     if args.knime and not sys.platform.startswith("darwin"):
         parser.error('Incompatible platform, please remove the -knime option')
 
@@ -184,12 +194,17 @@ def get_current_release():
     service = build('calendar', 'v3', credentials=creds)
 
     # Times for events().list()
-    now = DT.datetime.now().isoformat() + 'Z' # 'Z' indicates UTC time
-    fifteen_weeks_ahead = (DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
+    now = DT.datetime.now().isoformat() + 'Z'  # 'Z' indicates UTC time
+    fifteen_weeks_ahead = (
+        DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
 
     # List of all events in the past week that have "Release Target" in its name
-    events_result = service.events().list(calendarId=QA_calendar_id, timeMin=now,
-                                         timeMax=fifteen_weeks_ahead, singleEvents=True, q="* Release Target").execute()
+    events_result = service.events().list(
+        calendarId=QA_calendar_id,
+        timeMin=now,
+        timeMax=fifteen_weeks_ahead,
+        singleEvents=True,
+        q="* Release Target").execute()
 
     current_release = "20" + events_result["items"][0]["summary"][:4]
 
@@ -250,16 +265,16 @@ def format_buildID(build_id):
     format1 = build_id.capitalize().replace("-", " ")
 
     # modify latest_build so that "build-0##" becomes "Build ##"
-    latest_build_final = ""
+    formatted_buildID = ""
     if int(format1[6]) == 0:
         for i in range(len(build_id)):
             if i != 6:
-                latest_build_final = latest_build_final + format1[i]
+                formatted_buildID = formatted_buildID + format1[i]
 
-    if latest_build_final == "":
-        latest_build_final = format1
+    if formatted_buildID == "":
+        formatted_buildID = format1
 
-    return latest_build_final
+    return formatted_buildID
 
 
 def get_build_info(release, build_type, bundle_type, knime):
@@ -298,7 +313,8 @@ def get_build_info(release, build_type, bundle_type, knime):
     # go through each build-id page (starting with the latest) and find the latest build id
     # Stop once and available bundle is found
     for build_page in builds_list:
-        bundle_name = get_bundle_name(URL, build_page, bundle_type, platform, knime)
+        bundle_name = get_bundle_name(URL, build_page, bundle_type, platform,
+                                      knime)
         latest_build = build_page
         if bundle_name:
             break
@@ -331,7 +347,9 @@ def get_bundle_name(URL, build, bundle_type, platform, knime):
         bundle_type_header = soup.find('h3', text=f'{header} Installers')
         installers = bundle_type_header.find_next_sibling()
     except:
-        print(f"No {bundle_type} installer found for {URL}, moving to next build")
+        print(
+            f"No {bundle_type} installer found for {URL}, moving to next build"
+        )
         return None
 
     # filter out other platform installers
@@ -471,7 +489,11 @@ def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     Download latest schrodinger.hosts file and move it into the local installation
     """
     url = "http://build-download.schrodinger.com/generatehosts/generate_hosts_file"
-    form_data = {"build_type": build_type, "release": release, "build_id": build_id}
+    form_data = {
+        "build_type": build_type,
+        "release": release,
+        "build_id": build_id
+    }
     resp = requests.post(url, data=form_data, stream=True)
     resp.raise_for_status()
 
@@ -532,13 +554,20 @@ def uninstall(release, installation_dir):
         shutil.rmtree(apps_dir)
 
 
-def main(*, bundle_type, build_type, release, knime, download_only=False, download_dest=None):
+def main(*,
+         bundle_type,
+         build_type,
+         release,
+         knime,
+         download_only=False,
+         download_dest=None):
 
     # obtain all relevant build info for constructing the download url
     if not release:
         release = get_current_release()
 
-    latest_build, bundle_name = get_build_info(release, build_type, bundle_type, knime)
+    latest_build, bundle_name = get_build_info(release, build_type,
+                                               bundle_type, knime)
     download_url = '/'.join(
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
@@ -580,7 +609,8 @@ def main(*, bundle_type, build_type, release, knime, download_only=False, downlo
         return
 
     install_schrodinger_bundle(release, bundle_path, local_install_dir)
-    install_schrodinger_hosts(build_type, release, latest_build, local_install_dir)
+    install_schrodinger_hosts(build_type, release, latest_build,
+                              local_install_dir)
 
 
 if __name__ == "__main__":
@@ -592,4 +622,10 @@ if __name__ == "__main__":
     release = cmd_args.release
     download_only = cmd_args.download_only
 
-    main(bundle_type=bundle_type, build_type=build_type, download_dest=download_dest, release=release, knime=knime, download_only=download_only)
+    main(
+        bundle_type=bundle_type,
+        build_type=build_type,
+        download_dest=download_dest,
+        release=release,
+        knime=knime,
+        download_only=download_only)
