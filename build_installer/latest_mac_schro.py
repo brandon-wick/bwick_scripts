@@ -1,6 +1,6 @@
 """
-Script to automate the download and installation of the latest Mac NB
-(advanced w/KNIME) from build-download.schrodinger.com. A license file will need to be
+Script to automate the download and installation of the latest build
+from build-download.schrodinger.com. A license file will need to be
 manually installed. Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
 found in the buildbot-config repos. Modules from buildbot-config were not imported so
@@ -65,6 +65,7 @@ def parse_args():
         "-c",
         dest="download_destination",
         metavar="dest",
+        default=None,
         help="Download bundle to the specified directory. If not given the bundle is downloaded to the user's download")
 
     parser.add_argument(
@@ -86,8 +87,9 @@ def parse_args():
     args = parser.parse_args()
 
     # Verify path download destination exists if given
-    if not os.path.exists(args.download_destination):
-        parser.error("The download destination given doesn't seem to exist. Please give a pre-existing path")
+    if args.download_destination:
+        if not os.path.exists(args.download_destination):
+            parser.error("The download destination given doesn't seem to exist. Please give a pre-existing path")
 
     # Verify release argument is in correct format
     if args.release:
@@ -273,7 +275,6 @@ def get_build_info(release, build_type, bundle_type, knime):
     :return str latest_build: The latest build ID
     """
 
-    # Get platform
     if sys.platform.startswith("linux"):
         platform = "Linux"
     elif sys.platform.startswith("darwin"):
@@ -374,8 +375,8 @@ def move_to_final(source, dest):
 
 
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
-    install_tempdir = local_install_dir + "/installer_tmpdir"
-    create_clean_dirs(install_tempdir)
+    install_tempdir = os.path.join(local_install_dir + "install_tempdir")
+    create_clean_dirs(install_tempdir, local_install_dir)
     extract_bundle(bundle_installer, install_tempdir)
 
     if sys.platform.startswith('win32'):
@@ -389,7 +390,7 @@ def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
     elif sys.platform.startswith('darwin'):
         _darwin_install(release, install_tempdir, local_install_dir)
     else:
-        raise RuntimeError('unsupported platform: {}'.format(sys.platform()))
+        raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
     shutil.rmtree(install_tempdir)
 
@@ -412,7 +413,7 @@ def _get_windows_install_cmd(installer_dir, target_dir):
     setup_silent = os.path.join(installer_dir, 'setup-silent.exe')
     cmd = [
         setup_silent, '/interactive_mode:off', '/install',
-        "/installdir:'{}'".format(target_dir), '/force'
+        f"/installdir:'{target_dir}'", '/force'
     ]
     return cmd
 
@@ -463,20 +464,6 @@ def _darwin_install(release, installer_dir, target_dir):
         if os.path.splitext(file_)[1] != ".app":
             continue
         shutil.move((target_dir + file_), app_dir)
-
-
-def setup_dirs(release):
-    download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-    if sys.platform.startswith('win32'):
-        download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
-        local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
-    elif sys.platform.startswith('darwin'):
-        local_install_dir = f"/opt/schrodinger/suites{release}"
-    else:
-        local_install_dir = f"/scr/schrodinger{release}"
-
-
-    return download_dir, local_install_dir
 
 
 def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
@@ -556,7 +543,15 @@ def main(*, bundle_type, build_type, release, knime, download_only=False, downlo
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
     # get path for download and local installation directory
-    download_dir, local_install_dir = setup_dirs(release)
+    download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    if sys.platform.startswith('win32'):
+        download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
+        local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
+    elif sys.platform.startswith('darwin'):
+        local_install_dir = f"/opt/schrodinger/suites{release}"
+    else:
+        local_install_dir = f"/scr/schrodinger{release}"
+
     bundle_path = os.path.join(download_dir, bundle_name)
     if download_dest:
         bundle_path = os.path.join(download_dest, bundle_name)
@@ -578,7 +573,7 @@ def main(*, bundle_type, build_type, release, knime, download_only=False, downlo
             print("Local installation is out of date")
             uninstall(release, local_install_dir)
     else:
-        print("No local installation found, downloading latest NB...")
+        print("No local installation found, downloading latest build...")
 
     download_file(download_url, bundle_path)
     if download_only:
@@ -595,6 +590,6 @@ if __name__ == "__main__":
     bundle_type = cmd_args.bundle_type
     knime = cmd_args.knime
     release = cmd_args.release
-    download_only= cmd_args.download_only
+    download_only = cmd_args.download_only
 
     main(bundle_type=bundle_type, build_type=build_type, download_dest=download_dest, release=release, knime=knime, download_only=download_only)
