@@ -14,10 +14,11 @@ google user that has access to the Builds and Release calendar. See
 https://cloud.google.com/docs/authentication/getting-started
 for obtaining credentials.json
 
-Usage: python3 latest_mac_schro.py
+Example usages:
+python latest_mac_schro.py academic NB
+python latest_mac_schro.py advanced OB -release 21-3 -knime
 
 TODO: automate adding license
-
 """
 
 import argparse
@@ -65,14 +66,23 @@ def parse_args():
     parser.add_argument(
         "-c",
         dest="download_destination",
-        metavar="dest",
+        metavar="dl_dest",
         default=None,
         help=
         "Download bundle to the specified directory. If not given the bundle is downloaded to the user's download"
     )
 
     parser.add_argument(
-        "-d, --download",
+        "-i",
+        dest="install_destination",
+        metavar="i_dest",
+        default=None,
+        help=
+        "Install bundle to the specified directory. If not given the bundle is installed to the platform's default installation location"
+    )
+
+    parser.add_argument(
+        "-d, --download_only",
         dest="download_only",
         action="store_true",
         help=
@@ -122,7 +132,8 @@ def create_clean_dirs(*directories):
     Creates new directories. Also removes any pre-existing
     directory with the same name
 
-    param tuple(str) directories: name of directories
+    :param directories: Name of directories
+    :type directories: tuple(str)
     """
     dirs = list(directories)
     for dir in dirs:
@@ -136,8 +147,10 @@ def download_file(url, target):
     Use the stream interface of requests to download a file in chunks (without
     having to read the entire file into memory).
 
-    :param str url: URL to download file from
-    :param str target: Path to the target file being downloaded.
+    :param url: URL to download file from
+    :type url: str
+    :param target: Path to the target file being downloaded.
+    :type target: str
     """
     # remove previous schrodinger installer if one already exists
     if os.path.exists(target):
@@ -162,10 +175,11 @@ def download_file(url, target):
 def get_current_release():
     """
     Gets the current release version by looking 15 weeks ahead
-    into the build & release calendar and examining the next release target.
+    from the time of execution into the build & release calendar
+    and examining the next release target.
 
-    :return dmg_file: current release in XXXX-X format
-    :return type: str
+    :return current_release: Current release in XXXX-X format
+    :rtype current_release: str
     """
     from googleapiclient.discovery import build
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -223,9 +237,10 @@ def extract_bundle(bundle_path, destination):
     """
     Extract bundle from tar or zip or dmg into the specified directory.
 
-    :param str platform: Platform name, must be in buildinfo.Platforms
-    :param str bundle_path: Path to bundle being extracted.
-    :param str destination: Target directory for extracting files.
+    :param bundle_path: Path to bundle being extracted.
+    :type bundle_path: str
+    :param destination: Target directory for extracting files.
+    :type destination: str
     """
     print(f"Extracting {bundle_path} to {destination}")
 
@@ -283,15 +298,23 @@ def format_buildID(build_id):
 
 def get_build_info(release, build_type, bundle_type, knime):
     """
-    Retrieves the latest build-id that contains
-    a Schrodinger w/KNIME installation.
+    Retrieves the latest build-id for the given release
+    and the bundle installer file name
 
-    :param str base_url: base url of schrodinger build site
-    :param str base_type: NB or OB
-    :return str current_release: The current release passed on from
-        get_current_release()
-    :return str dmg_file: dmg file extension
-    :return str latest_build: The latest build ID
+    :param release: Release in XXXX-X format
+    :type release: str
+    :param build_type: NB or OB
+    :type build_type: str
+    :param bundle_type: Academic, general, advanced or desres
+    :type current_release: str
+    :param knime: Include knime installation if true
+    :type knime: bool
+
+    :return latest_build: The latest build ID
+    :rtype latest_build: str
+    :return bundle_name: Name of bundle installer passed from
+        get_bundle_name()
+    :rtype bundle_name: str
     """
 
     if sys.platform.startswith("linux"):
@@ -317,7 +340,7 @@ def get_build_info(release, build_type, bundle_type, knime):
     # go through each build-id page (starting with the latest) and find
     # the latest build id. Stop once and available bundle is found
     for build_page in builds_list:
-        bundle_name = get_bundle_name(URL, build_page, bundle_type, platform,
+        bundle_name = get_bundle_name(build_page, bundle_type, platform,
                                       knime)
         latest_build = build_page
         if bundle_name:
@@ -326,18 +349,22 @@ def get_build_info(release, build_type, bundle_type, knime):
     return latest_build, bundle_name
 
 
-def get_bundle_name(URL, build, bundle_type, platform, knime):
+def get_bundle_name(build_page, bundle_type, platform, knime):
     """
-    Fetches the dmg file name by scraping for the
-    advanced installers header and specifically filtering
-    results so that the Mac installation w/ KNIME's
-    href is left. It is then edited to obtain the file name.
+    Fetches the bundle installer file name by scraping for the
+    bundle type header and then finding the href to the requested installer.
+    It is then edited to obtain the file name.
 
-    :param tuple(str) url_bits: url bits to contstruct the URL
-        for the installers page
-    :return str dmg_file: dmg file name
+    :param build_page: The download page for each build ID in 'build-###'
+        format
+    :type build_page: str
+    :param platform: Machine platform
+    :type platform: str
+
+    :return installer_file: Name of bundle installer
+    :rtype installer_file: str
     """
-    URL = '/'.join([URL, build])
+    URL = '/'.join([BASE_URL, build])
     page = requests.get(URL)
     page.raise_for_status()
     soup = BeautifulSoup(page.content, 'html.parser')
@@ -376,12 +403,16 @@ def get_bundle_name(URL, build, bundle_type, platform, knime):
     return installer_file
 
 
-def get_local_build_version(local_suite_path):
+def get_local_build_version(local_installation_path):
     """
-    Gets the content from version.txt found in the local suite directory
+    Gets the content from version.txt found in the local schrodinger
+    installation
 
-    :param str local_install_path: Path to local installation
-    :return str build_version: contents of version.txt
+    :param local_installation_path: Path to the local installation
+    :type local_installation_path: str
+
+    :return build_version: Contents of version.txt
+    :rtype build_version: str
     """
     version_file = local_suite_path + "/version.txt"
     with open(version_file, 'r') as fh:
@@ -414,8 +445,10 @@ def _run_install_cmd(cmd, cwd):
     Runs the specified command in the given working directory with the env
     variable SCHRODINGER_INSTALL_UNSUPPORTED_PLATFORMS set to "1".
 
-    :param list cmd: Command to execute.
-    :param str cwd: Working directory for the command.
+    :param cmd: Command to execute.
+    :type cmd: list
+    :param cwd: Working directory for the command.
+    :type cmd: str
     """
     print(f'Running {subprocess.list2cmdline(cmd)}')
     env = os.environ.copy()
@@ -449,8 +482,10 @@ def _darwin_install(release, installer_dir, target_dir):
     Extracts "Payload" from each pkg file in installer_dir and pipes it to
     cpio.
 
-    :param str installer_dir: Path to directory containing pkg files.
-    :param str target_dir: Path to installation target directory.
+    :param installer_dir: Path to directory containing pkg files.
+    :type installer_dir: str
+    :param target_dir: Path to installation target directory.
+    :type target_dir: str
     """
 
     app_dir = f"/Applications/SchrodingerSuites{release}"
@@ -537,7 +572,6 @@ def mount_dmg(dmg_path):
 
 
 def uninstall(release, installation_dir):
-
     if sys.platform.startswith('win32'):
         uninstaller = f"{installation_dir}\\installer\\uninstall-silent.exe"
         subprocess.run([uninstaller, "/interactive_mode:off"])
@@ -556,7 +590,8 @@ def main(*,
          release,
          knime,
          download_only=False,
-         download_dest=None):
+         download_dest=None,
+         install_dest=None):
 
     # obtain all relevant build info for constructing the download url
     if not release:
@@ -576,6 +611,10 @@ def main(*,
         local_install_dir = f"/opt/schrodinger/suites{release}"
     else:
         local_install_dir = f"/scr/schrodinger{release}"
+
+    # Use path given by -i if passed
+    if install_dest:
+        local_install_dir = install_dest
 
     bundle_path = os.path.join(download_dir, bundle_name)
     if download_dest:
@@ -612,6 +651,7 @@ def main(*,
 if __name__ == "__main__":
     cmd_args = parse_args()
     download_dest = cmd_args.download_destination
+    install_dest = cmd_args.install_destination
     build_type = cmd_args.build_type
     bundle_type = cmd_args.bundle_type
     knime = cmd_args.knime
@@ -622,6 +662,7 @@ if __name__ == "__main__":
         bundle_type=bundle_type,
         build_type=build_type,
         download_dest=download_dest,
+        install_dest=install_dest,
         release=release,
         knime=knime,
         download_only=download_only)
