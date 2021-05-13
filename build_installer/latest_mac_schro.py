@@ -3,14 +3,15 @@ Script to automate the download and installation of the latest build
 from build-download.schrodinger.com. A license file will need to be
 manually installed. Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
-found in the buildbot-config repos. Modules from buildbot-config were not imported so
-that the user does not need to clone any additional repos.
+found in the buildbot-config repos. Modules from buildbot-config were
+not imported so that the user does not need to clone any additional repos.
 
 This script requires the following:
 
 1. connected to the PDX VPN
-2. a token.pick or credentials.json in the CWD that provides info for a google user that has
-access to the Builds and Release calendar. See https://cloud.google.com/docs/authentication/getting-started
+2. a token.pickle or credentials.json in the CWD that provides info for a
+google user that has access to the Builds and Release calendar. See
+https://cloud.google.com/docs/authentication/getting-started
 for obtaining credentials.json
 
 Usage: python3 latest_mac_schro.py
@@ -160,8 +161,8 @@ def download_file(url, target):
 
 def get_current_release():
     """
-    Gets the current release version by looking 15 weeks ahead into the build & release calendar
-    and examining the next release target.
+    Gets the current release version by looking 15 weeks ahead
+    into the build & release calendar and examining the next release target.
 
     :return dmg_file: current release in XXXX-X format
     :return type: str
@@ -183,6 +184,9 @@ def get_current_release():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            if not os.path.isfile(os.path.join(os.getcwd(), 'credentials.json')):
+                raise FileNotFoundError(
+                    "credentials.json not found, please visit https://cloud.google.com/docs/authentication/getting-started")
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
@@ -302,7 +306,7 @@ def get_build_info(release, build_type, bundle_type, knime):
     page = requests.get(URL)
     soup = BeautifulSoup(page.content, 'html.parser')
 
-    # obtain all available builds and arrange in a list where latest build is first
+    # obtain all available builds and arrange the latest build first
     all_uls = soup.find_all('ul')
     builds_list = all_uls[1].text.split('\n')
     builds_list = [id.strip() for id in builds_list if 'build' in id]
@@ -310,8 +314,8 @@ def get_build_info(release, build_type, bundle_type, knime):
     if int(builds_list[-1][6:9]) > int(builds_list[0][6:9]):
         builds_list = builds_list[::-1]
 
-    # go through each build-id page (starting with the latest) and find the latest build id
-    # Stop once and available bundle is found
+    # go through each build-id page (starting with the latest) and find
+    # the latest build id. Stop once and available bundle is found
     for build_page in builds_list:
         bundle_name = get_bundle_name(URL, build_page, bundle_type, platform,
                                       knime)
@@ -339,14 +343,13 @@ def get_bundle_name(URL, build, bundle_type, platform, knime):
     soup = BeautifulSoup(page.content, 'html.parser')
 
     # find the appropriate bundle type header and go to the ul under it.
-
     header = bundle_type.capitalize()
     if bundle_type.lower() == "desres":
         header = "Academic"
     try:
         bundle_type_header = soup.find('h3', text=f'{header} Installers')
         installers = bundle_type_header.find_next_sibling()
-    except:
+    except AttributeError:
         print(
             f"No {bundle_type} installer found for {URL}, moving to next build"
         )
@@ -358,8 +361,8 @@ def get_bundle_name(URL, build, bundle_type, platform, knime):
         filter_ = "DESRES"
     installers = installers.find_all(
         lambda tag: (tag.name == 'a' and filter_ in tag.text))
-
     installer = installers[0]
+
     # Select KNIME installation if -knime was passed
     if platform == "MacOSX" and not knime:
         installer = installers[1]
@@ -398,13 +401,11 @@ def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
     extract_bundle(bundle_installer, install_tempdir)
 
     if sys.platform.startswith('win32'):
-        cmd = _get_windows_install_cmd(install_tempdir, install_tempdir)
+        cmd = _get_windows_install_cmd(install_tempdir, local_install_dir)
         _run_install_cmd(cmd, install_tempdir)
-        move_to_final(install_tempdir, local_install_dir)
     elif sys.platform.startswith('linux'):
-        cmd = _get_linux_install_cmd(install_tempdir, install_tempdir)
+        cmd = _get_linux_install_cmd(install_tempdir, local_install_dir)
         _run_install_cmd(cmd, install_tempdir)
-        move_to_final(install_tempdir, local_install_dir)
     elif sys.platform.startswith('darwin'):
         _darwin_install(release, install_tempdir, local_install_dir)
     else:
@@ -486,7 +487,8 @@ def _darwin_install(release, installer_dir, target_dir):
 
 def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     """
-    Download latest schrodinger.hosts file and move it into the local installation
+    Download latest schrodinger.hosts file and move it into the
+    local installation
     """
     url = "http://build-download.schrodinger.com/generatehosts/generate_hosts_file"
     form_data = {
@@ -586,12 +588,12 @@ def main(*,
         bundle_path = os.path.join(download_dest, bundle_name)
 
     print(
-        f"The latest build for {release} is {latest_build}. \nChecking for a local {release} installation..."
+        f"The latest build for {release} is {latest_build}.\nChecking for a local {release} installation..."
     )
 
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
-        print(f"Local installation found, version.txt shows: {local_version}")
+        print(f"Local installation found, version.txt shows:\n{local_version}")
 
         if release and format_buildID(latest_build) in local_version:
             print(
