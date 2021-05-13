@@ -390,11 +390,6 @@ def get_local_build_version(local_suite_path):
     return build_version
 
 
-def move_to_final(source, dest):
-    for file_ in os.listdir(source):
-        shutil.move(os.path.join(source, file_), dest)
-
-
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
     install_tempdir = os.path.join(local_install_dir + "install_tempdir")
     create_clean_dirs(install_tempdir, local_install_dir)
@@ -529,8 +524,7 @@ def mount_dmg(dmg_path):
     match = re.search(r'/Volumes/dmg\.[\d\w]+', output)
     if not match:
         raise RuntimeError(
-            'Could not parse mount point\n\nCommand: {}\n\nOutput:\n\n{}'.
-            format(subprocess.list2cmdline(cmd), output))
+            f'Could not parse mount point\n\nCommand: {subprocess.list2cmdline(cmd)}\n\nOutput:\n\n{output}'
     mount_point = match.group(0)
 
     # Yield the mount point so we can do:
