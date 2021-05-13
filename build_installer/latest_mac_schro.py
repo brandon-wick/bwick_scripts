@@ -15,8 +15,9 @@ https://cloud.google.com/docs/authentication/getting-started
 for obtaining credentials.json
 
 Example usages:
-python latest_mac_schro.py academic NB
+python latest_mac_schro.py academic NB -d
 python latest_mac_schro.py advanced OB -release 21-3 -knime
+python latest_mac_schro.py general OB -c /home/user/Downloads -i /scr/user
 
 TODO: automate adding license
 """
@@ -66,7 +67,7 @@ def parse_args():
     parser.add_argument(
         "-c",
         dest="download_destination",
-        metavar="dl_dest",
+        metavar="/path/to/download/folder",
         default=None,
         help=
         "Download bundle to the specified directory. If not given the bundle is downloaded to the user's download"
@@ -75,7 +76,7 @@ def parse_args():
     parser.add_argument(
         "-i",
         dest="install_destination",
-        metavar="i_dest",
+        metavar="/path/to/installation",
         default=None,
         help=
         "Install bundle to the specified directory. If not given the bundle is installed to the platform's default installation location"
@@ -90,8 +91,9 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-release",
-        metavar="release",
+        "-r, --release",
+        metavar="##-#",
+        dest="release",
         help=
         "Release version in YY-Q format (eg. 21-1). If release is not specified, it is automatically fetched from the builds and release calendar"
     )
@@ -99,15 +101,22 @@ def parse_args():
     parser.add_argument(
         "-knime",
         action="store_true",
-        help="include KNIME in schrodinger installation")
+        help="include KNIME in schrodinger installation. Only available for General and Advanced bundles.")
 
     args = parser.parse_args()
 
-    # Verify path download destination exists if given
+    # Verify path to download destination exists if given
     if args.download_destination:
         if not os.path.exists(args.download_destination):
             parser.error(
                 "The download destination given doesn't seem to exist. Please give a pre-existing path"
+            )
+
+    # Verify path to install destination exists if given
+    if args.install_destination:
+        if not os.path.exists(args.install_destination):
+            parser.error(
+                "The install destination given doesn't seem to exist. Please give a pre-existing path"
             )
 
     # Verify release argument is in correct format
@@ -422,22 +431,22 @@ def get_local_build_version(local_installation_path):
 
 
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
-    install_tempdir = os.path.join(local_install_dir + "install_tempdir")
-    create_clean_dirs(install_tempdir, local_install_dir)
-    extract_bundle(bundle_installer, install_tempdir)
+    install_tmpdir = os.path.join(local_install_dir + "install_tmpdir")
+    create_clean_dirs(install_tmpdir, local_install_dir)
+    extract_bundle(bundle_installer, install_tmpdir)
 
     if sys.platform.startswith('win32'):
-        cmd = _get_windows_install_cmd(install_tempdir, local_install_dir)
-        _run_install_cmd(cmd, install_tempdir)
+        cmd = _get_windows_install_cmd(install_tmpdir, local_install_dir)
+        _run_install_cmd(cmd, install_tmpdir)
     elif sys.platform.startswith('linux'):
-        cmd = _get_linux_install_cmd(install_tempdir, local_install_dir)
-        _run_install_cmd(cmd, install_tempdir)
+        cmd = _get_linux_install_cmd(install_tmpdir, local_install_dir)
+        _run_install_cmd(cmd, install_tmpdir)
     elif sys.platform.startswith('darwin'):
-        _darwin_install(release, install_tempdir, local_install_dir)
+        _darwin_install(release, install_tmpdir, local_install_dir)
     else:
         raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
-    shutil.rmtree(install_tempdir)
+    shutil.rmtree(install_tmpdir)
 
 
 def _run_install_cmd(cmd, cwd):
@@ -559,7 +568,7 @@ def mount_dmg(dmg_path):
     match = re.search(r'/Volumes/dmg\.[\d\w]+', output)
     if not match:
         raise RuntimeError(
-            f'Could not parse mount point\n\nCommand: {subprocess.list2cmdline(cmd)}\n\nOutput:\n\n{output}'
+            f'Could not parse mount point\n\nCommand: {subprocess.list2cmdline(cmd)}\n\nOutput:\n\n{output}')
     mount_point = match.group(0)
 
     # Yield the mount point so we can do:
@@ -602,14 +611,14 @@ def main(*,
     download_url = '/'.join(
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
-    # get path for download and local installation directory
+    # default paths for download and local installation directories
     download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
     if sys.platform.startswith('win32'):
         download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
         local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
     elif sys.platform.startswith('darwin'):
         local_install_dir = f"/opt/schrodinger/suites{release}"
-    else:
+    elif sys.platform.startswith('linux'):
         local_install_dir = f"/scr/schrodinger{release}"
 
     # Use path given by -i if passed
