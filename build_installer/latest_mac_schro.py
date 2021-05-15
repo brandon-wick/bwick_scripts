@@ -3,23 +3,17 @@ Script to automate the download and installation of the latest build
 from build-download.schrodinger.com. A license file will need to be
 manually installed. Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
-found in the buildbot-config repos. Modules from buildbot-config were
-not imported so that the user does not need to clone any additional repos.
+found in the buildbot-config repos. This is designed to be a standalone
+script.
 
 This script requires the following:
 
 1. connected to the PDX VPN
-2. a token.pickle or credentials.json in the CWD that provides info for a
-google user that has access to the Builds and Release calendar. See
-https://cloud.google.com/docs/authentication/getting-started
-for obtaining credentials.json
 
 Example usages:
-python latest_mac_schro.py academic NB -d
-python latest_mac_schro.py advanced OB -release 21-3 -knime
-python latest_mac_schro.py general OB -c /home/user/Downloads -i /scr/user
-
-TODO: automate adding license
+python latest_build_installer.py academic NB -d
+python latest_build_installer.py advanced OB -release 21-3 -knime
+python latest_build_installer.py general OB -c /home/user/Downloads -i /scr/user
 """
 
 import argparse
@@ -101,7 +95,9 @@ def parse_args():
     parser.add_argument(
         "-knime",
         action="store_true",
-        help="include KNIME in schrodinger installation. Only available for General and Advanced bundles.")
+        help=
+        "include KNIME in schrodinger installation. Only available for General and Advanced bundles."
+    )
 
     args = parser.parse_args()
 
@@ -109,15 +105,12 @@ def parse_args():
     if args.download_destination:
         if not os.path.exists(args.download_destination):
             parser.error(
-                "The download destination given doesn't seem to exist. Please give a pre-existing path"
+                "The download destination given could not be found. Please give a pre-existing path"
             )
 
-    # Verify path to install destination exists if given
-    if args.install_destination:
-        if not os.path.exists(args.install_destination):
-            parser.error(
-                "The install destination given doesn't seem to exist. Please give a pre-existing path"
-            )
+    # Disable -i option for Windows
+    if sys.platform.startswith("win32") and args.install_destination:
+        parser.error('-i option is not available for Windows')
 
     # Verify release argument is in correct format
     if args.release:
@@ -144,6 +137,7 @@ def create_clean_dirs(*directories):
     :param directories: Name of directories
     :type directories: tuple(str)
     """
+
     dirs = list(directories)
     for dir in dirs:
         if os.path.exists(dir):
@@ -161,6 +155,7 @@ def download_file(url, target):
     :param target: Path to the target file being downloaded.
     :type target: str
     """
+
     # remove previous schrodinger installer if one already exists
     if os.path.exists(target):
         print("Previous installer found, removing...")
@@ -190,6 +185,7 @@ def get_current_release():
     :return current_release: Current release in XXXX-X format
     :rtype current_release: str
     """
+
     from googleapiclient.discovery import build
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
@@ -207,9 +203,11 @@ def get_current_release():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.isfile(os.path.join(os.getcwd(), 'credentials.json')):
+            if not os.path.isfile(
+                    os.path.join(os.getcwd(), 'credentials.json')):
                 raise FileNotFoundError(
-                    "credentials.json not found, please visit https://cloud.google.com/docs/authentication/getting-started")
+                    "credentials.json not found, please visit https://cloud.google.com/docs/authentication/getting-started\nor manually pass in the current release"
+                )
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
@@ -225,7 +223,7 @@ def get_current_release():
     fifteen_weeks_ahead = (
         DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
 
-    # List of all events in the past week that have "Release Target" in its name
+    # List of all events in the past week that contains "Release Target"
     events_result = service.events().list(
         calendarId=QA_calendar_id,
         timeMin=now,
@@ -251,6 +249,7 @@ def extract_bundle(bundle_path, destination):
     :param destination: Target directory for extracting files.
     :type destination: str
     """
+
     print(f"Extracting {bundle_path} to {destination}")
 
     if sys.platform.startswith('win32'):
@@ -326,12 +325,12 @@ def get_build_info(release, build_type, bundle_type, knime):
     :rtype bundle_name: str
     """
 
-    if sys.platform.startswith("linux"):
-        platform = "Linux"
+    if sys.platform.startswith("win32"):
+        platform = "Windows"
     elif sys.platform.startswith("darwin"):
         platform = "MacOSX"
     else:
-        platform = "Windows"
+        platform = "Linux"
 
     # update URL and navigate to builds page
     URL = '/'.join([BASE_URL, build_type, release])
@@ -349,8 +348,8 @@ def get_build_info(release, build_type, bundle_type, knime):
     # go through each build-id page (starting with the latest) and find
     # the latest build id. Stop once and available bundle is found
     for build_page in builds_list:
-        bundle_name = get_bundle_name(build_page, bundle_type, platform,
-                                      knime)
+        bundle_name = get_bundle_name(release, build_type, build_page,
+                                      bundle_type, platform, knime)
         latest_build = build_page
         if bundle_name:
             break
@@ -358,7 +357,8 @@ def get_build_info(release, build_type, bundle_type, knime):
     return latest_build, bundle_name
 
 
-def get_bundle_name(build_page, bundle_type, platform, knime):
+def get_bundle_name(release, build_type, build_page, bundle_type, platform,
+                    knime):
     """
     Fetches the bundle installer file name by scraping for the
     bundle type header and then finding the href to the requested installer.
@@ -373,7 +373,8 @@ def get_bundle_name(build_page, bundle_type, platform, knime):
     :return installer_file: Name of bundle installer
     :rtype installer_file: str
     """
-    URL = '/'.join([BASE_URL, build])
+
+    URL = '/'.join([BASE_URL, build_type, release, build_page])
     page = requests.get(URL)
     page.raise_for_status()
     soup = BeautifulSoup(page.content, 'html.parser')
@@ -423,7 +424,8 @@ def get_local_build_version(local_installation_path):
     :return build_version: Contents of version.txt
     :rtype build_version: str
     """
-    version_file = local_suite_path + "/version.txt"
+
+    version_file = os.path.join(local_installation_path, "version.txt")
     with open(version_file, 'r') as fh:
         build_version = fh.read()
 
@@ -431,8 +433,8 @@ def get_local_build_version(local_installation_path):
 
 
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
-    install_tmpdir = os.path.join(local_install_dir + "install_tmpdir")
-    create_clean_dirs(install_tmpdir, local_install_dir)
+    install_tmpdir = os.path.join(local_install_dir, "install_tmpdir")
+    create_clean_dirs(local_install_dir, install_tmpdir)
     extract_bundle(bundle_installer, install_tmpdir)
 
     if sys.platform.startswith('win32'):
@@ -443,8 +445,6 @@ def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
         _run_install_cmd(cmd, install_tmpdir)
     elif sys.platform.startswith('darwin'):
         _darwin_install(release, install_tmpdir, local_install_dir)
-    else:
-        raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
     shutil.rmtree(install_tmpdir)
 
@@ -459,6 +459,7 @@ def _run_install_cmd(cmd, cwd):
     :param cwd: Working directory for the command.
     :type cmd: str
     """
+
     print(f'Running {subprocess.list2cmdline(cmd)}')
     env = os.environ.copy()
     env['SCHRODINGER_INSTALL_UNSUPPORTED_PLATFORMS'] = '1'
@@ -529,6 +530,7 @@ def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     Download latest schrodinger.hosts file and move it into the
     local installation
     """
+
     url = "http://build-download.schrodinger.com/generatehosts/generate_hosts_file"
     form_data = {
         "build_type": build_type,
@@ -568,7 +570,8 @@ def mount_dmg(dmg_path):
     match = re.search(r'/Volumes/dmg\.[\d\w]+', output)
     if not match:
         raise RuntimeError(
-            f'Could not parse mount point\n\nCommand: {subprocess.list2cmdline(cmd)}\n\nOutput:\n\n{output}')
+            f'Could not parse mount point\n\nCommand: {subprocess.list2cmdline(cmd)}\n\nOutput:\n\n{output}'
+        )
     mount_point = match.group(0)
 
     # Yield the mount point so we can do:
@@ -597,7 +600,7 @@ def main(*,
          bundle_type,
          build_type,
          release,
-         knime,
+         knime=False,
          download_only=False,
          download_dest=None,
          install_dest=None):
@@ -620,8 +623,10 @@ def main(*,
         local_install_dir = f"/opt/schrodinger/suites{release}"
     elif sys.platform.startswith('linux'):
         local_install_dir = f"/scr/schrodinger{release}"
+    else:
+        raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
-    # Use path given by -i if passed
+    # Use path given by -i if one exists
     if install_dest:
         local_install_dir = install_dest
 
@@ -650,6 +655,7 @@ def main(*,
 
     download_file(download_url, bundle_path)
     if download_only:
+        print("Download-only enabled, stopping execution")
         return
 
     install_schrodinger_bundle(release, bundle_path, local_install_dir)
