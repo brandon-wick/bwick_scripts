@@ -112,6 +112,10 @@ def parse_args():
                 "The download destination given doesn't seem to exist. Please give a pre-existing path"
             )
 
+    # Make -d and -i mutually exclusive
+    if args.download_only and args.install_destination:
+        parser.error('-i and -d can not be passed simultaneously, perhaps you mean -c instead of -d?')
+
     # Disable -i option for Windows
     if sys.platform.startswith("win32") and args.install_destination:
         parser.error('-i option is not available for Windows')
