@@ -3,12 +3,16 @@ Script to automate the download and installation of the latest build
 from build-download.schrodinger.com. A license file will need to be
 manually installed. Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
-found in the buildbot-config repos. This is designed to be a standalone
-script.
+found in the buildbot-config repos. Modules from buildbot-config were
+not imported so that the user does not need to clone any additional repos.
 
 This script requires the following:
 
 1. connected to the PDX VPN
+2. a token.pickle or credentials.json in the CWD that provides info for a
+google user that has access to the Builds and Release calendar. See
+https://cloud.google.com/docs/authentication/getting-started
+for obtaining credentials.json
 
 Example usages:
 python latest_build_installer.py academic NB -d
@@ -105,7 +109,7 @@ def parse_args():
     if args.download_destination:
         if not os.path.exists(args.download_destination):
             parser.error(
-                "The download destination given could not be found. Please give a pre-existing path"
+                "The download destination given doesn't seem to exist. Please give a pre-existing path"
             )
 
     # Disable -i option for Windows
@@ -206,7 +210,7 @@ def get_current_release():
             if not os.path.isfile(
                     os.path.join(os.getcwd(), 'credentials.json')):
                 raise FileNotFoundError(
-                    "credentials.json not found, please visit https://cloud.google.com/docs/authentication/getting-started\nor manually pass in the current release"
+                    "credentials.json not found, please visit https://cloud.google.com/docs/authentication/getting-started"
                 )
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
@@ -223,7 +227,7 @@ def get_current_release():
     fifteen_weeks_ahead = (
         DT.datetime.now() + DT.timedelta(weeks=15)).isoformat() + 'Z'
 
-    # List of all events in the past week that contains "Release Target"
+    # List of all events in the past week that contain "Release Target"
     events_result = service.events().list(
         calendarId=QA_calendar_id,
         timeMin=now,
@@ -347,12 +351,15 @@ def get_build_info(release, build_type, bundle_type, knime):
 
     # go through each build-id page (starting with the latest) and find
     # the latest build id. Stop once and available bundle is found
+    print(
+        f"Finding the latest available {bundle_type} build for {platform}...")
     for build_page in builds_list:
         bundle_name = get_bundle_name(release, build_type, build_page,
                                       bundle_type, platform, knime)
         latest_build = build_page
         if bundle_name:
             break
+    print(f"Latest {bundle_type} build for {platform} is {latest_build}")
 
     return latest_build, bundle_name
 
@@ -383,12 +390,14 @@ def get_bundle_name(release, build_type, build_page, bundle_type, platform,
     header = bundle_type.capitalize()
     if bundle_type.lower() == "desres":
         header = "Academic"
+
+    # For the rare occasion that headers aren't updated on the build site
     try:
         bundle_type_header = soup.find('h3', text=f'{header} Installers')
         installers = bundle_type_header.find_next_sibling()
     except AttributeError:
         print(
-            f"No {bundle_type} installer found for {URL}, moving to next build"
+            f"No {bundle_type} installers found for {URL}, moving to next build"
         )
         return None
 
@@ -398,14 +407,21 @@ def get_bundle_name(release, build_type, build_page, bundle_type, platform,
         filter_ = "DESRES"
     installers = installers.find_all(
         lambda tag: (tag.name == 'a' and filter_ in tag.text))
-    installer = installers[0]
 
-    # Select KNIME installation if -knime was passed
+    # See if there is an available installer
+    if len(installers) == 0:
+        print(
+            f"No {platform} {bundle_type} installer found for {URL}, moving to next build"
+        )
+        return None
+
+    # Select the no KNIME installation if -knime is not passed
     if platform == "MacOSX" and not knime:
         installer = installers[1]
+    else:
+        installer = installers[0]
 
     installer_file = ""
-
     if installer:
         installer_file = installer['href']
         installer_file = installer_file.split('/')[-1]
@@ -445,6 +461,8 @@ def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
         _run_install_cmd(cmd, install_tmpdir)
     elif sys.platform.startswith('darwin'):
         _darwin_install(release, install_tmpdir, local_install_dir)
+    else:
+        raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
     shutil.rmtree(install_tmpdir)
 
@@ -623,8 +641,6 @@ def main(*,
         local_install_dir = f"/opt/schrodinger/suites{release}"
     elif sys.platform.startswith('linux'):
         local_install_dir = f"/scr/schrodinger{release}"
-    else:
-        raise RuntimeError(f'unsupported platform: {sys.platform()}')
 
     # Use path given by -i if one exists
     if install_dest:
@@ -634,18 +650,13 @@ def main(*,
     if download_dest:
         bundle_path = os.path.join(download_dest, bundle_name)
 
-    print(
-        f"The latest build for {release} is {latest_build}.\nChecking for a local {release} installation..."
-    )
-
+    print(f"Checking for a local {release} installation...")
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
         print(f"Local installation found, version.txt shows:\n{local_version}")
 
         if release and format_buildID(latest_build) in local_version:
-            print(
-                "You currently have the latest build available for the given release, no update necessary"
-            )
+            print("You currently have the latest build, no update necessary")
             return
         else:
             print("Local installation is out of date")
