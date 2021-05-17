@@ -415,11 +415,10 @@ def get_bundle_name(release, build_type, build_page, bundle_type, platform,
         )
         return None
 
+    installer = installers[0]
     # Select the no KNIME installation if -knime is not passed
     if platform == "MacOSX" and not knime:
         installer = installers[1]
-    else:
-        installer = installers[0]
 
     installer_file = ""
     if installer:
