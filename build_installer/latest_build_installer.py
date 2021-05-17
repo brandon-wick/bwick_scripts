@@ -633,20 +633,23 @@ def main(*,
         [BASE_URL, build_type, release, latest_build, bundle_name])
 
     # default paths for download and local installation directories
-    download_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    user_down_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+
     if sys.platform.startswith('win32'):
-        download_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
+        user_down_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
         local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
     elif sys.platform.startswith('darwin'):
         local_install_dir = f"/opt/schrodinger/suites{release}"
     elif sys.platform.startswith('linux'):
         local_install_dir = f"/scr/schrodinger{release}"
 
-    # Use path given by -i if one exists
-    if install_dest:
-        local_install_dir = install_dest
+    bundle_path = os.path.join(user_down_dir, bundle_name)
 
-    bundle_path = os.path.join(download_dir, bundle_name)
+    # Use installation path given by -i if passed
+    if install_dest:
+        local_install_dir = os.path.join(install_dest, f"suites{release}")
+
+    # Use download path given by -c if passed
     if download_dest:
         bundle_path = os.path.join(download_dest, bundle_name)
 
