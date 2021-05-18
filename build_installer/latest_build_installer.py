@@ -519,7 +519,7 @@ def _darwin_install(release, installer_dir, target_dir):
     :type target_dir: str
     """
 
-    app_dir = f"/Applications/SchrodingerSuites{release}"
+    app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
     create_clean_dirs(app_dir)
     target_dir = target_dir + "/"
 
@@ -612,7 +612,7 @@ def uninstall(release, installation_dir):
     print(f"Removing {installation_dir}...")
     shutil.rmtree(installation_dir)
     if sys.platform.startswith('darwin'):
-        apps_dir = f"/Applications/SchrodingerSuites{release}"
+        apps_dir = f"/Applications/SchrodingerSuites{release}_LBI"
         print(f"Removing {apps_dir}")
         shutil.rmtree(apps_dir)
 
