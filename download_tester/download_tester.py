@@ -8,10 +8,10 @@ following requirements:
 
 2. Run on Linux or Mac
 
-note: if -OB is used, you must be connected to the PDX VPN
+note: if -build_id is used, you must be connected to the PDX VPN
 
 example usages:
-    python3 download_testing_v2.py academic 21-1 -OB 161
+    python3 download_testing_v2.py academic 21-1 -build_id 161
     python3 download_testing_v2.py academic 21-1 -manual
 """
 import argparse
@@ -19,7 +19,6 @@ import hashlib
 import os
 import re
 import requests
-import sys
 import time
 
 from argparse import RawDescriptionHelpFormatter
@@ -73,9 +72,9 @@ def parse_args():
         help="Release version in YY-Q format (eg. 21-1)")
 
     parser.add_argument(
-        "-OB",
+        "-build_id",
         metavar="###",
-        help="obtain ref checksums from given OB (eg. 054, 132)")
+        help="obtain ref checksums from given build ID (eg. 054, 132)")
 
     parser.add_argument(
         "-manual",
@@ -89,15 +88,15 @@ def parse_args():
     if not re.search('^[2][0-9]-[1-4]$', args.release):
         parser.error('Incorrect release given')
 
-    # require -OB or -manual to be passed
-    if not args.OB and not args.manual:
-        parser.error('Missing one of the following arguments: -OB, -manual')
-    elif args.OB and args.manual:
+    # require -build_id or -manual to be passed
+    if not args.build_id and not args.manual:
+        parser.error('Missing one of the following arguments: -build_id, -manual')
+    elif args.build_id and args.manual:
         parser.error(
-            'You can only supply one of the following arguments: -OB, -manual')
+            'You can only supply one of the following arguments: -build_id, -manual')
 
-    # Verify -OB argument is in correct format
-    if args.OB and not re.search('^[0-9][0-9][0-9]$', args.OB):
+    # Verify -build_id argument is in correct format
+    if args.build_id and not re.search('^[0-9][0-9][0-9]$', args.build_id):
         parser.error('Improper build format given')
 
     return args
@@ -187,17 +186,17 @@ def get_bundle_name(bundle_type, platform, release):
     return bundle_name
 
 
-def get_ref_checksum(release, OB, bundle):
+def get_ref_checksum(release, build_id, bundle):
     """
-    Obtains the reference checksum of the given OB
+    Obtains the reference checksum of the given build_id
 
-    :param OB: OB build id (eg 142)
-    :type OB: str
+    :param build_id: NB build id (eg 142)
+    :type build_id: str
 
     :return resp.text: the checksum and the path of the file it was derived from
     :rtype resp.text: str
     """
-    url = f"http://build-download.schrodinger.com/OB/20{release}/build-{OB}/{bundle}.md5"
+    url = f"http://build-download.schrodinger.com/NB/20{release}/build-{build_id}/{bundle}.md5"
     resp = requests.get(url, stream=True)
     resp.raise_for_status()
     return resp.text
@@ -259,11 +258,11 @@ def remove_installers(download_dir, files_to_remove):
             os.remove(file_to_delete)
 
 
-def main(*, bundle_type, release, OB, manual):
+def main(*, bundle_type, release, build_id, manual):
     download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
     download_files = download_files_builder(bundle_type, release)
 
-    # Retrieve reference checksums depending on if -OB or -manual is enabled
+    # Retrieve reference checksums depending on if -build_id or -manual is enabled
     if manual:
         checksum_references = {
             bundle: input_ref_checksum(
@@ -272,7 +271,7 @@ def main(*, bundle_type, release, OB, manual):
         }
     else:
         checksum_references = {
-            bundle: get_ref_checksum(release, OB, bundle)
+            bundle: get_ref_checksum(release, build_id, bundle)
             for (bundle) in download_files
         }
 
@@ -297,7 +296,7 @@ def main(*, bundle_type, release, OB, manual):
     driver.find_element_by_id("edit-submit").click()
 
     # Select release
-    release_dropdown = Select(driver.find_element_by_id(f"edit-release"))
+    release_dropdown = Select(driver.find_element_by_id("edit-release"))
     release_dropdown.select_by_visible_text(f"Release 20{release}")
 
     # Go to Free Maestro tab if using academic account
@@ -333,7 +332,7 @@ def main(*, bundle_type, release, OB, manual):
             print("checksums DO NOT match")
 
         print(
-            f"REFERENCE {ref_checksum}\n{bundle_type} {bundle_checksum} {bundle_path}"
+            f"REFERENCE: {ref_checksum}\nDOWNLOADED: {bundle_checksum} {bundle_path}\n\n"
         )
 
 
@@ -342,5 +341,5 @@ if __name__ == '__main__':
     main(
         bundle_type=cmd_args.bundle_type,
         release=cmd_args.release,
-        OB=cmd_args.OB,
+        build_id=cmd_args.build_id,
         manual=cmd_args.manual)
