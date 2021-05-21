@@ -3,7 +3,7 @@ Script designed to automate the process of download testing when
 given a bundle type and release version. This script has the
 following requirements:
 
-1. Must have chrome browser installed and chromedriver somehwere in your $PATH
+1. Must have chrome browser installed and chromedriver somewhere in your $PATH
 (To install chromedriver, run script and see link in error message)
 
 2. Run on Linux or Mac
