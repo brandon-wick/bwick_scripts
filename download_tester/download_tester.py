@@ -283,6 +283,7 @@ def main(*, bundle_type, release, build_id, manual):
     prefs = {'safebrowsing.enabled': 'false'}
     chromeOptions.add_experimental_option("prefs", prefs)
     driver = webdriver.Chrome(options=chromeOptions)
+    driver.maximize_window()
     driver.get(URL)
 
     # Login
