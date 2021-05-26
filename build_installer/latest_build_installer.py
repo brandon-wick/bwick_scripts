@@ -642,9 +642,9 @@ def main(*,
         user_down_dir = os.path.join(os.getenv('USERPROFILE'), 'Downloads')
         local_install_dir = f'C:\\Program Files\\Schrodinger{release}'
     elif sys.platform.startswith('darwin'):
-        local_install_dir = f"/opt/schrodinger/suites{release}"
+        local_install_dir = f"/opt/schrodinger/LBI/suites{release}"
     elif sys.platform.startswith('linux'):
-        local_install_dir = f"/scr/schrodinger{release}"
+        local_install_dir = f"/scr/LBI/schrodinger{release}"
 
     bundle_path = os.path.join(user_down_dir, bundle_name)
 
