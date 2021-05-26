@@ -656,10 +656,12 @@ def main(*,
     if download_dest:
         bundle_path = os.path.join(download_dest, bundle_name)
 
+    print(f"Download directory used: {user_down_dir}\nInstallation directory used: {local_install_dir}")
+
     print(f"Checking for a local {release} installation...")
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
-        print(f"Local installation found, version.txt shows:\n{local_version}")
+        print(f"Local installation, version.txt shows:\n{local_version}")
 
         if release and format_buildID(latest_build) in local_version:
             print("You currently have the latest build, no update necessary")
