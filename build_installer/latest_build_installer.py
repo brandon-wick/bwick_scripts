@@ -1,7 +1,8 @@
 """
 Script to automate the download and installation of the latest build
-from build-download.schrodinger.com. A license file will need to be
-manually installed. Designed to be an alternative to latest_schro.py.
+from build-download.schrodinger.com. This script also downloads and installs
+a schrodinger.hosts and stub license file for the pdx-lic-lv01 server.
+Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
 found in the buildbot-config repos. Modules from buildbot-config were
 not imported so that the user does not need to clone any additional repos.
@@ -546,6 +547,25 @@ def _darwin_install(release, installer_dir, target_dir):
         shutil.move((target_dir + file_), app_dir)
 
 
+def install_license_stub(installation_dir):
+    """
+    Install client stub license file that points to the pdx license server
+    """
+    license_dir = os.path.join(installation_dir, "licenses")
+    print(f"Installing license to {license_dir}...")
+    create_clean_dirs(license_dir)
+    current_date = DT.datetime.now().strftime("%Y-%m-%d")
+    lic_filename = f"80_client_{current_date}_pdx-lic-lv01.lic"
+
+    with open(lic_filename, "w+") as new_lic:
+        lic_contents = ["SERVER pdx-lic-lv01 ANY 27008\n", "USE_SERVER"]
+        new_lic.writelines(lic_contents)
+
+    shutil.move(lic_filename, license_dir)
+
+    print("License successfully installed")
+
+
 def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     """
     Download latest schrodinger.hosts file and move it into the
@@ -570,7 +590,7 @@ def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     if os.path.isfile(hosts_path):
         os.remove(hosts_path)
 
-    print("installing schrodinger.hosts...")
+    print("Installing schrodinger.hosts...")
     shutil.move("schrodinger.hosts", installation_dir)
     print("schroding.hosts successfully installed")
 
@@ -680,6 +700,7 @@ def main(*,
     install_schrodinger_bundle(release, bundle_path, local_install_dir)
     install_schrodinger_hosts(build_type, release, latest_build,
                               local_install_dir)
+    install_license_stub(local_install_dir)
 
 
 if __name__ == "__main__":
