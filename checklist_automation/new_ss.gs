@@ -61,7 +61,7 @@ function createNewChecklist() {
   newSheet.setFrozenRows(Object.keys(productLabel["A"]).length)
 
   // center all cells
-  newSheet.getRange("A1:" + buildChecklist["macCol"] + buildChecklist["percentRow"]).setHorizontalAlignment("center").setVerticalAlignment("middle");
+  newSheet.getRange("A1:" + buildChecklist["macCol"] + buildChecklist["percentRow"]).setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
 
   // Bold cells
   newSheet.getRangeList(["A1:D1", "A1:A" + buildChecklist["percentRow"]]).setFontWeight("bold").setFontSize(12)

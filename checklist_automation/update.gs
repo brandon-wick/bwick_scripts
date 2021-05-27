@@ -12,7 +12,7 @@ function updateChecklist() {
 
   // Clear all formatting and align text
   activeSheet.getRange(cellsToFormat).clear();
-  activeSheet.getRange(cellsToFormat).setHorizontalAlignment("center").setVerticalAlignment("middle");
+  activeSheet.getRange(cellsToFormat).setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
 
   // Set background to grey
   activeSheet.getRangeList([buildChecklist["winCol"] +"1:" + buildChecklist["macCol"] + "4"]).setBackground("#d9d9d9");
