@@ -38,6 +38,7 @@ import zipfile
 from argparse import RawDescriptionHelpFormatter
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
+from pathlib import Path
 
 BASE_URL = 'http://build-download.schrodinger.com'
 
@@ -100,8 +101,9 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-knime",
+        "-k, --knime",
         action="store_true",
+        dest="knime",
         help=
         "include KNIME in schrodinger installation. Only available for General and Advanced bundles."
     )
@@ -117,7 +119,9 @@ def parse_args():
 
     # Make -d and -i mutually exclusive
     if args.download_only and args.install_destination:
-        parser.error('-i and -d can not be passed simultaneously, perhaps you mean -c instead of -d?')
+        parser.error(
+            '-i and -d can not be passed simultaneously, perhaps you mean -c instead of -d?'
+        )
 
     # Disable -i option for Windows
     if sys.platform.startswith("win32") and args.install_destination:
@@ -140,7 +144,7 @@ def parse_args():
     return args
 
 
-def create_clean_dirs(*directories):
+def create_clean_dirs(dir):
     """
     Creates new directories. Also removes any pre-existing
     directory with the same name
@@ -149,11 +153,12 @@ def create_clean_dirs(*directories):
     :type directories: tuple(str)
     """
 
-    dirs = list(directories)
-    for dir in dirs:
-        if os.path.exists(dir):
-            shutil.rmtree(dir)
-        os.makedirs(dir)
+    if os.path.exists(dir):
+        print(f"removing previous {dir}")
+        shutil.rmtree(dir)
+
+    print(f"Creating {dir}")
+    Path(dir).mkdir(parents=True)
 
 
 def download_file(url, target):
@@ -285,15 +290,9 @@ def extract_bundle(bundle_path, destination):
                            os.path.splitext(os.path.basename(bundle_path))[0])
     try:
         for name in os.listdir(dirname):
-            dest = os.path.join(destination, name)
-            if os.path.exists(dest):
-                if os.path.isdir(dest):
-                    shutil.rmtree(dest)
-                else:
-                    os.remove(dest)
             src = os.path.join(dirname, name)
-            print(f"Moving {os.path.abspath(src)} to {os.path.abspath(dest)}")
-            os.rename(src, dest)
+            print(f"Moving {os.path.abspath(src)} to {destination}")
+            shutil.move(src, destination)
     finally:
         shutil.rmtree(dirname)
 
@@ -456,7 +455,7 @@ def get_local_build_version(local_installation_path):
 
 def install_schrodinger_bundle(release, bundle_installer, local_install_dir):
     install_tmpdir = os.path.join(local_install_dir, "install_tmpdir")
-    create_clean_dirs(local_install_dir, install_tmpdir)
+    create_clean_dirs(install_tmpdir)
     extract_bundle(bundle_installer, install_tmpdir)
 
     if sys.platform.startswith('win32'):
@@ -629,10 +628,18 @@ def mount_dmg(dmg_path):
 def uninstall(release, installation_dir):
     if sys.platform.startswith('win32'):
         uninstaller = f"{installation_dir}\\installer\\uninstall-silent.exe"
-        subprocess.run([uninstaller, "/interactive_mode:off"])
+        subprocess.run([uninstaller, "/interactive_mode:off", "/cleanall"])
 
-    print(f"Removing {installation_dir}...")
-    shutil.rmtree(installation_dir)
+        # sleep is needed or else clean_dirs from 463 doesn't work in install_schrodinger()
+        # TODO figure out why
+        time.sleep(10)
+
+    # This 'if' statement is necessary since the windows uninstaller
+    # removes the installation dir automatically
+    if os.path.exists(installation_dir):
+        print(f"Removing {installation_dir}...")
+        shutil.rmtree(installation_dir)
+
     if sys.platform.startswith('darwin'):
         app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
         print(f"Removing {app_dir}")
@@ -678,12 +685,14 @@ def main(*,
     if download_dest:
         bundle_path = os.path.join(download_dest, bundle_name)
 
-    print(f"Download directory used: {user_down_dir}\nInstallation directory used: {local_install_dir}")
+    print(
+        f"Download directory used: {user_down_dir}\nInstallation directory used: {local_install_dir}"
+    )
 
     print(f"Checking for a local {release} installation...")
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
-        print(f"Local installation, version.txt shows:\n{local_version}")
+        print(f"Local installation found, version.txt shows:\n{local_version}")
 
         if release and format_buildID(latest_build) in local_version:
             print("You currently have the latest build, no update necessary")
@@ -692,7 +701,7 @@ def main(*,
             print("Local installation is out of date")
             uninstall(release, local_install_dir)
     else:
-        print("No local installation found, downloading latest build...")
+        print("No local installation found.")
 
     download_file(download_url, bundle_path)
     if download_only:
@@ -729,4 +738,6 @@ if __name__ == "__main__":
 
     time.sleep(60)
     time_elapsed = DT.datetime.now() - start_time
-    print(f"LBI finished in {time_elapsed.seconds // 3600}h{time_elapsed.seconds // 60 % 60}m{time_elapsed.seconds % 60}s")
+    print(
+        f"LBI finished in {time_elapsed.seconds // 3600}h{time_elapsed.seconds // 60 % 60}m{time_elapsed.seconds % 60}s"
+    )
