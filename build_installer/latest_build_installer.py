@@ -21,6 +21,8 @@ python latest_build_installer.py advanced OB -release 21-3 -knime
 python latest_build_installer.py general OB -c /home/user/Downloads -i /scr/user
 """
 
+import time
+
 import argparse
 import datetime as DT
 import os
@@ -581,8 +583,8 @@ def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
     resp = requests.post(url, data=form_data, stream=True)
     resp.raise_for_status()
 
-    with open("schrodinger.hosts", mode='w') as file_handle:
-        file_handle.write(resp.text)
+    with open("schrodinger.hosts", mode='w') as host_file:
+        host_file.write(resp.text)
 
     hosts_path = os.path.join(installation_dir, "schrodinger.hosts")
 
@@ -632,9 +634,9 @@ def uninstall(release, installation_dir):
     print(f"Removing {installation_dir}...")
     shutil.rmtree(installation_dir)
     if sys.platform.startswith('darwin'):
-        apps_dir = f"/Applications/SchrodingerSuites{release}_LBI"
-        print(f"Removing {apps_dir}")
-        shutil.rmtree(apps_dir)
+        app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
+        print(f"Removing {app_dir}")
+        shutil.rmtree(app_dir)
 
 
 def main(*,
@@ -713,6 +715,9 @@ if __name__ == "__main__":
     release = cmd_args.release
     download_only = cmd_args.download_only
 
+    start_time = DT.datetime.now()
+    print(f"Starting LBI {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
     main(
         bundle_type=bundle_type,
         build_type=build_type,
@@ -721,3 +726,7 @@ if __name__ == "__main__":
         release=release,
         knime=knime,
         download_only=download_only)
+
+    time.sleep(60)
+    time_elapsed = DT.datetime.now() - start_time
+    print(f"LBI finished in {time_elapsed.seconds // 3600}h{time_elapsed.seconds // 60 % 60}m{time_elapsed.seconds % 60}s")
