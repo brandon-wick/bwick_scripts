@@ -85,7 +85,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-d, --download_only",
+        "-d", "--download_only",
         dest="download_only",
         action="store_true",
         help=
@@ -93,7 +93,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-r, --release",
+        "-r", "--release",
         metavar="##-#",
         dest="release",
         help=
@@ -101,7 +101,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-k, --knime",
+        "-k", "--knime",
         action="store_true",
         dest="knime",
         help=
@@ -521,8 +521,8 @@ def _darwin_install(release, installer_dir, target_dir):
     :type target_dir: str
     """
 
-    app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
-    create_clean_dirs(app_dir)
+    #app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
+    #create_clean_dirs(app_dir)
     target_dir = target_dir + "/"
 
     for file_path in os.listdir(installer_dir):
@@ -542,10 +542,10 @@ def _darwin_install(release, installer_dir, target_dir):
                 gunzip.returncode, gunzip_cmd, output=gunzip.stdout)
 
     # move .app files to /Applications/
-    for file_ in os.listdir(target_dir):
-        if os.path.splitext(file_)[1] != ".app":
-            continue
-        shutil.move((target_dir + file_), app_dir)
+    #for file_ in os.listdir(target_dir):
+    #    if os.path.splitext(file_)[1] != ".app":
+    #        continue
+    #    shutil.move((target_dir + file_), app_dir)
 
 
 def install_license_stub(installation_dir):
@@ -640,10 +640,10 @@ def uninstall(release, installation_dir):
         print(f"Removing {installation_dir}...")
         shutil.rmtree(installation_dir)
 
-    if sys.platform.startswith('darwin'):
-        app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
-        print(f"Removing {app_dir}")
-        shutil.rmtree(app_dir)
+    #if sys.platform.startswith('darwin'):
+    #    app_dir = f"/Applications/SchrodingerSuites{release}_LBI"
+    #    print(f"Removing {app_dir}")
+    #    shutil.rmtree(app_dir)
 
 
 def main(*,
