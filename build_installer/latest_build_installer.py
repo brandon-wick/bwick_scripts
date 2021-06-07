@@ -736,7 +736,6 @@ if __name__ == "__main__":
         knime=knime,
         download_only=download_only)
 
-    time.sleep(60)
     time_elapsed = DT.datetime.now() - start_time
     print(
         f"LBI finished in {time_elapsed.seconds // 3600}h{time_elapsed.seconds // 60 % 60}m{time_elapsed.seconds % 60}s"
