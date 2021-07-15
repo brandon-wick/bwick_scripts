@@ -56,7 +56,7 @@ dl_logger = logging.getLogger('download')
 for _logger, _fmt in ((logger, MULTILINE_FORMAT), (dl_logger, ONELINE_FORMAT)):
     s_handler = logging.StreamHandler()
     f_handler = TimedRotatingFileHandler(
-        'LBI.log', when="d", interval=1, backupCount=5)
+        'LBI.log', when="d", interval=1, backupCount=2)
     s_handler.setFormatter(logging.Formatter(_fmt, DATE_FORMAT))
     f_handler.setFormatter(logging.Formatter(_fmt, DATE_FORMAT))
     s_handler.setLevel(logging.INFO)
