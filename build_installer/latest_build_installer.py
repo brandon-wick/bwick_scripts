@@ -4,8 +4,7 @@ from build-download.schrodinger.com. This script also downloads and installs
 a schrodinger.hosts and stub license file for the pdx-lic-lv01 server.
 Designed to be an alternative to latest_schro.py.
 Script implements functions from dmg.py and install_schrodinger.py
-found in the buildbot-config repos. Modules from buildbot-config were
-not imported so that the user does not need to clone any additional repos.
+found in the buildbot-config repos.
 
 This script requires the following:
 
@@ -17,7 +16,7 @@ for obtaining credentials.json
 
 Example usages:
 python latest_build_installer.py academic NB -d
-python latest_build_installer.py advanced OB -release 21-3 -knime
+python latest_build_installer.py advanced OB -release 21-3 --knime
 python latest_build_installer.py general OB -c /home/user/Downloads -i /scr/user
 """
 
@@ -119,7 +118,7 @@ def parse_args():
         "bundle_type",
         choices=["academic", "general", "advanced", "desres"],
         metavar="bundle_type",
-        help="type of bundle")
+        help="Type of bundle")
 
     parser.add_argument(
         "build_type",
@@ -129,20 +128,22 @@ def parse_args():
 
     parser.add_argument(
         "-c",
+        "--download_dest",
         dest="download_destination",
-        metavar="/path/to/download/folder",
+        metavar="PATH",
         default=None,
         help=
-        "Download bundle to the specified directory. If not given the bundle is downloaded to the user's download"
+        "Download bundle to the specified directory. Default location is the user's download directory"
     )
 
     parser.add_argument(
         "-i",
+        "--install_dest",
         dest="install_destination",
-        metavar="/path/to/installation",
+        metavar="PATH",
         default=None,
         help=
-        "Install bundle to the specified directory. If not given the bundle is installed to the platform's default installation location"
+        "Install bundle to the specified directory (Mac and Linux only). Default locations: Mac - /opt/schrodinger/LBI | Linux - /scr/LBI"
     )
 
     parser.add_argument(
@@ -169,7 +170,7 @@ def parse_args():
         action="store_true",
         dest="knime",
         help=
-        "include KNIME in schrodinger installation. Only available for General and Advanced bundles."
+        "Include KNIME in schrodinger installation. Only available for General and Advanced bundles."
     )
 
     args = parser.parse_args()
@@ -184,7 +185,7 @@ def parse_args():
     # Make -d and -i mutually exclusive
     if args.download_only and args.install_destination:
         parser.error(
-            '-i and -d can not be passed simultaneously, perhaps you mean -c instead of -d?'
+            '-i and -d cannot be passed simultaneously, perhaps you meant -c instead of -d?'
         )
 
     # Disable -i option for Windows
@@ -757,7 +758,7 @@ def main(*,
     elif sys.platform.startswith('darwin'):
         local_install_dir = f"/opt/schrodinger/LBI/suites{release}"
     elif sys.platform.startswith('linux'):
-        local_install_dir = f"/scr/LBI/schrodinger{release}"
+        local_install_dir = f"/scr/LBI/suites{release}"
 
     bundle_path = os.path.join(user_down_dir, bundle_name)
 
@@ -776,7 +777,7 @@ def main(*,
     logger.info(f"Checking for a local {release} installation...")
     if os.path.isdir(local_install_dir):
         local_version = get_local_build_version(local_install_dir)
-        logge.info(
+        logger.info(
             f"Local installation found, version.txt shows:\n{local_version}")
 
         if release and format_buildID(latest_build) in local_version:
