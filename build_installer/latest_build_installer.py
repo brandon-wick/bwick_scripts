@@ -676,7 +676,9 @@ def install_schrodinger_hosts(build_type, release, build_id, installation_dir):
         os.remove(hosts_path)
 
     logger.info("Installing schrodinger.hosts...")
-    shutil.move("schrodinger.hosts", installation_dir)
+    shutil.move("Schrodinger.hosts", installation_dir)
+    logger.info("Setting permissions for schrodinger.hosts...")
+    os.chmod(hosts_path, 0o776)
     logger.info("schroding.hosts successfully installed")
 
 
@@ -771,7 +773,7 @@ def main(*,
         bundle_path = os.path.join(download_dest, bundle_name)
 
     logger.info(
-        f"Download directory used: {user_down_dir}\nInstallation directory used: {local_install_dir}"
+        f"Download directory: {user_down_dir}\nInstallation directory: {local_install_dir}"
     )
 
     logger.info(f"Checking for a local {release} installation...")
