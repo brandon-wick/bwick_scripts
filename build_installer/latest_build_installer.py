@@ -504,7 +504,7 @@ def get_bundle_name(release, build_type, build_page, bundle_type, platform,
 
     installer = installers[0]
     # Select the no KNIME installation if -knime is not passed
-    if platform == "MacOSX" and not knime:
+    if platform == "MacOSX" and not knime and (bundle_type != "academic"):
         installer = installers[1]
 
     installer_file = ""
