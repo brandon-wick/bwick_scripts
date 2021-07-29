@@ -320,6 +320,7 @@ def get_current_release():
         calendarId=QA_calendar_id,
         timeMin=now,
         timeMax=fifteen_weeks_ahead,
+        orderBy="startTime",
         singleEvents=True,
         q="* Release Target").execute()
 
